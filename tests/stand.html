@@ -101,13 +101,17 @@
         // null to emulate a HA where sing-box entities are not linked to the
         // device at all (the user's hard case)
         window.__registryDeviceId = "dev1";
+        // optional replacement registry (a "foreign" device with non-singbox
+        // entities) used by the card4 scenario
+        window.__foreignRegistry = null;
         window.__fakeHass = {
             states,
             async callWS(msg) {
                 // deliberately no config_entries/get and no config_entry_id:
                 // the card must not depend on them
                 if (msg.type === "config/entity_registry/list") {
-                    return registry.map((e) => ({
+                    const src = window.__foreignRegistry || registry;
+                    return src.map((e) => ({
                         ...e,
                         device_id: window.__registryDeviceId,
                     }));
@@ -124,6 +128,7 @@
     <div id="card"></div>
     <div id="card2"></div>
     <div id="card3"></div>
+    <div id="card4"></div>
 
     <script type="module">
         import "../singbox-panel-card.js";
@@ -153,6 +158,21 @@
             card3.setConfig({ title: "Fallback", device_id: "no-such-device" });
             document.getElementById("card3").appendChild(card3);
             card3.hass = window.__fakeHass;
+        };
+        // fourth card: the pinned device exists but holds NO sing-box entities
+        // (a foreign integration) -> the card must error and list a sample of
+        // the records found on that device
+        window.__addCard4 = () => {
+            window.__registryDeviceId = "other";
+            window.__foreignRegistry = [
+                { entity_id: "sensor.wg_status", domain: "sensor", unique_id: "wg_status" },
+                { entity_id: "sensor.wg_rx_bytes", domain: "sensor", unique_id: "wg_rx" },
+                { entity_id: "binary_sensor.wg_connected", domain: "binary_sensor", unique_id: "wg_conn" },
+            ];
+            const card4 = document.createElement("singbox-panel-card");
+            card4.setConfig({ title: "Foreign", device_id: "other" });
+            document.getElementById("card4").appendChild(card4);
+            card4.hass = window.__fakeHass;
         };
     </script>
 </body>

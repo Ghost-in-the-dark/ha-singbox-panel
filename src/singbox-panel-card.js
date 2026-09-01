@@ -1,7 +1,7 @@
 import { LitElement, html } from "lit";
 import { cardStyles } from "./singbox-panel-card-style.js";
 
-const CARD_VERSION = "0.1.4";
+const CARD_VERSION = "0.1.5";
 
 // unique_id formats used by the ha-singbox integration:
 //   select: "{entry_id}_group_{group_tag}"
@@ -139,6 +139,31 @@ class SingBoxPanelCard extends LitElement {
                           (e) => e.device_id === this._config.device_id
                       ).length
                     : null;
+                const pinRecords = this._config.device_id
+                    ? registry.filter(
+                          (e) => e.device_id === this._config.device_id
+                      )
+                    : [];
+                const pinSample = pinRecords
+                    .slice(0, 5)
+                    .map((e) => {
+                        const uid = e.unique_id
+                            ? e.unique_id.slice(0, 40)
+                            : "—";
+                        return `${e.entity_id} (${e.domain}) [${uid}]`;
+                    })
+                    .join(", ");
+                if (pinRecords.length) {
+                    console.warn(
+                        "singbox-panel: records matched by pin:",
+                        pinRecords
+                            .map(
+                                (e) =>
+                                    `${e.entity_id} ${e.domain} ${e.unique_id ?? ""}`
+                            )
+                            .join("\n")
+                    );
+                }
                 const sample = markedSelects
                     .slice(0, 5)
                     .map((e) => `${e.entity_id} [${e.unique_id}]`)
@@ -147,7 +172,7 @@ class SingBoxPanelCard extends LitElement {
                 this._message =
                     markedSelects.length === 0
                         ? deviceCount !== null
-                            ? `Группы прокси не найдены: по device_id найдено записей реестра: ${deviceCount}, но сущностей sing-box среди них нет (всего select: ${allSelects.length}, ping-сенсоров: ${pingSensors.length}). Проверьте device_id и что ha-singbox настроена.`
+                            ? `Группы прокси не найдены: по device_id найдено записей реестра: ${deviceCount}, но сущностей ha-singbox среди них нет (select во всём реестре: ${allSelects.length}, ping-сенсоров: ${pingSensors.length}). Пример записей по device_id: ${pinSample}. Убедитесь, что установлена интеграция ha-singbox (Ghost-in-the-dark/ha-singbox) и она создала сущности, затем перезапустите HA.`
                             : `Группы прокси не найдены: в реестре нет сущностей sing-box (всего select: ${allSelects.length}, ping-сенсоров: ${pingSensors.length}). Проверьте, что ha-singbox установлена и настроена, затем перезапустите HA.`
                         : `Группы прокси не найдены: select-сущности есть, но с неожиданным форматом unique_id (${sample}). Обновите ha-singbox и перезапустите HA.`;
                 return;

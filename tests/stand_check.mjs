@@ -195,6 +195,17 @@ try {
         fallbackNote
     );
 
+    // -- fourth card: pin hits a foreign device with no sing-box entities ----
+    await page.evaluate(() => window.__addCard4());
+    await page.waitForSelector("#card4 .state-msg", { timeout: 5000 });
+    const foreignMsg = await page.locator("#card4 .state-msg").textContent();
+    check(
+        "foreign device error message",
+        foreignMsg.includes("записей реестра: 3") &&
+            foreignMsg.includes("sensor.wg_status (sensor) [wg_status]"),
+        foreignMsg
+    );
+
     await page.screenshot({ path: "tests/stand.png", fullPage: true });
     console.log("  screenshot: tests/stand.png");
 } finally {
