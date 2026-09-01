@@ -203,6 +203,9 @@ export const cardStyles = css`
         text-overflow: ellipsis;
         white-space: nowrap;
     }
+    .node-name.standalone {
+        padding: 6px 0 6px 11px;
+    }
     .node-ping {
         display: inline-flex;
         align-items: center;

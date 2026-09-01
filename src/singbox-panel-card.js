@@ -116,6 +116,7 @@ class SingBoxPanelCard extends LitElement {
         }
 
         const groups = [];
+        const inGroups = new Set();
         for (const e of registryEntries) {
             if (
                 e.domain !== "select" ||
@@ -133,6 +134,7 @@ class SingBoxPanelCard extends LitElement {
                 state && state.attributes && Array.isArray(state.attributes.options)
                     ? state.attributes.options
                     : [];
+            options.forEach((tag) => inGroups.add(tag));
             groups.push({
                 tag: groupTag,
                 entityId: e.entity_id,
@@ -142,6 +144,13 @@ class SingBoxPanelCard extends LitElement {
                 })),
             });
         }
+
+        // Standalone outbounds (VPN interfaces, direct links, ...) are proxies
+        // with a ping sensor that belong to no group.
+        const standalone = Object.keys(pings)
+            .filter((tag) => !inGroups.has(tag))
+            .sort()
+            .map((tag) => ({ tag, pingEntity: pings[tag] }));
 
         const sensorBySuffix = (suffix) => {
             const e = registryEntries.find(
@@ -169,6 +178,7 @@ class SingBoxPanelCard extends LitElement {
             connectionsIn: sensorBySuffix("_connections_in"),
             clashMode: clashMode ? clashMode.entity_id : null,
             groups,
+            standalone,
         };
     }
 
@@ -334,8 +344,45 @@ class SingBoxPanelCard extends LitElement {
                 </div>
 
                 ${m.groups.map((g) => this._renderGroup(g))}
+                ${m.standalone.length
+                    ? this._renderStandalone(m.standalone)
+                    : ""}
 
                 <div class="footer">sing-box panel · v${CARD_VERSION}</div>
+            </div>
+        `;
+    }
+
+    _renderStandalone(proxies) {
+        return html`
+            <div class="group">
+                <div class="group-head">
+                    <span class="group-name">Outbound</span>
+                </div>
+                <div class="nodes">
+                    ${proxies.map((p) => this._renderStandaloneNode(p))}
+                </div>
+            </div>
+        `;
+    }
+
+    _renderStandaloneNode(proxy) {
+        const ms = this._ping(proxy);
+        const pinging = Boolean(this._testing[proxy.tag]);
+        return html`
+            <div class="node">
+                <span class="node-name standalone">${proxy.tag}</span>
+                ${ms !== null
+                    ? html`<span class="ping ${this._pingClass(ms)}">${this._pingText(ms)}</span>`
+                    : ""}
+                <button
+                    class="node-ping"
+                    title="Проверить пинг ${proxy.tag}"
+                    ?disabled=${pinging}
+                    @click=${() => this._pingNode(proxy.tag)}
+                >
+                    <ha-icon icon="mdi:radar"></ha-icon>
+                </button>
             </div>
         `;
     }

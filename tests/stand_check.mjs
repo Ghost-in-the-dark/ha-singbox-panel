@@ -54,7 +54,7 @@ try {
     );
 
     const groups = await page.locator(".group").count();
-    check("two groups", groups === 2, `${groups} groups`);
+    check("three blocks", groups === 3, `${groups} blocks`);
     check(
         "group names",
         (await page.locator(".group").nth(0).locator(".group-name").textContent()) ===
@@ -63,8 +63,26 @@ try {
                 "Ru-out"
     );
 
-    const nodes = await page.locator(".node").count();
-    check("seven nodes", nodes === 7, `${nodes} nodes`);
+    const groupNodes = await page.locator(".group .node").count();
+    check("nine nodes total", groupNodes === 9, `${groupNodes} nodes`);
+
+    // -- standalone outbounds block ------------------------------------------
+    const standaloneNames = await page
+        .locator(".group", { hasText: "Outbound" })
+        .locator(".node-name")
+        .allTextContents();
+    check(
+        "standalone outbounds",
+        standaloneNames.length === 2 &&
+            standaloneNames.includes("EU-out") &&
+            standaloneNames.includes("main-out"),
+        standaloneNames.join(", ")
+    );
+    const standalonePing = await page
+        .locator(".node", { hasText: "EU-out" })
+        .locator(".ping")
+        .textContent();
+    check("standalone ping badge", standalonePing.trim() === "160 ms", standalonePing.trim());
 
     const activeNodes = await page.locator(".node.active .node-name").allTextContents();
     check(
@@ -119,6 +137,19 @@ try {
         JSON.stringify(calls)
     );
     check("node ping button disabled while running", await nodePingBtn.isDisabled());
+
+    // standalone ping button -> url_test of that outbound
+    const standalonePingBtn = page
+        .locator(".node", { hasText: "EU-out" })
+        .locator(".node-ping");
+    await standalonePingBtn.click();
+    await page.waitForTimeout(150);
+    calls = await page.evaluate(() => window.__calls);
+    check(
+        "standalone ping button -> url_test",
+        calls.some((c) => c.service === "url_test" && c.data.outbound_tag === "EU-out"),
+        JSON.stringify(calls)
+    );
 
     const firstTestBtn = page.locator(".group").nth(0).locator(".test-btn");
     await firstTestBtn.click();

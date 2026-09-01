@@ -71,6 +71,8 @@
             "sensor.ru_2_out_ping": { state: "177", attributes: { unit_of_measurement: "ms" } },
             "sensor.ru_3_out_ping": { state: "139", attributes: { unit_of_measurement: "ms" } },
             "sensor.ru_urltest_out_ping": { state: "191", attributes: { unit_of_measurement: "ms" } },
+            "sensor.main_out_ping": { state: "219", attributes: { unit_of_measurement: "ms" } },
+            "sensor.eu_out_ping": { state: "160", attributes: { unit_of_measurement: "ms" } },
         };
         const registry = [
             { entity_id: "sensor.singbox_version", domain: "sensor", unique_id: `${entryId}_version`, config_entry_id: entryId },
@@ -90,6 +92,8 @@
             { entity_id: "sensor.ru_2_out_ping", domain: "sensor", unique_id: `${entryId}_ping_Ru-2-out`, config_entry_id: entryId },
             { entity_id: "sensor.ru_3_out_ping", domain: "sensor", unique_id: `${entryId}_ping_Ru-3-out`, config_entry_id: entryId },
             { entity_id: "sensor.ru_urltest_out_ping", domain: "sensor", unique_id: `${entryId}_ping_Ru-urltest-out`, config_entry_id: entryId },
+            { entity_id: "sensor.main_out_ping", domain: "sensor", unique_id: `${entryId}_ping_main-out`, config_entry_id: entryId },
+            { entity_id: "sensor.eu_out_ping", domain: "sensor", unique_id: `${entryId}_ping_EU-out`, config_entry_id: entryId },
         ];
 
         window.__calls = [];
