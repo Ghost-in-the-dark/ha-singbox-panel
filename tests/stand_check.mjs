@@ -93,6 +93,25 @@ try {
         activeNodes.join(", ")
     );
 
+    // -- live updates without interaction ------------------------------------
+    await page.evaluate(() => {
+        window.__pushState("sensor.telaga_1_out_ping", "95");
+        window.__pushState("sensor.singbox_uplink", "5000");
+    });
+    await page.waitForTimeout(200);
+    const livePing = await page
+        .locator(".node", { hasText: "telaga-1-out" })
+        .locator(".ping")
+        .textContent();
+    check("live ping update", livePing.trim() === "95 ms", livePing.trim());
+    const liveUp = await page.locator(".tile-value").nth(0).textContent();
+    check("live uplink update", liveUp.includes("5,000"), liveUp);
+    await page.evaluate(() => {
+        window.__pushState("sensor.telaga_1_out_ping", "180");
+        window.__pushState("sensor.singbox_uplink", "1641");
+    });
+    await page.waitForTimeout(200);
+
     const pingText = await page
         .locator(".node", { hasText: "telaga-1-out" })
         .locator(".ping")

@@ -1,7 +1,7 @@
 import { LitElement, html } from "lit";
 import { cardStyles } from "./singbox-panel-card-style.js";
 
-const CARD_VERSION = "0.1.7";
+const CARD_VERSION = "0.1.8";
 
 // unique_id formats used by the ha-singbox integration:
 //   select: "{entry_id}_group_{group_tag}"
@@ -15,6 +15,10 @@ const DEFAULT_TITLE = "Sing-box";
 
 class SingBoxPanelCard extends LitElement {
     static properties = {
+        // _hass must be reactive: HA pushes a new hass object on every state
+        // change and without a re-render the card would show stale values
+        // until the user interacts with it.
+        _hass: { state: true },
         _state: { state: true }, // "loading" | "error" | "ready"
         _message: { state: true },
         _model: { state: true },
@@ -64,6 +68,9 @@ class SingBoxPanelCard extends LitElement {
             this._discovered = true;
             this._discover();
         }
+        // Re-render on every hass push even when HA hands us the same object
+        // reference (Lit would otherwise skip the update).
+        if (hass) this.requestUpdate();
     }
 
     // -- discovery ----------------------------------------------------------
