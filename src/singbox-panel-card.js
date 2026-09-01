@@ -1,7 +1,7 @@
 import { LitElement, html } from "lit";
 import { cardStyles } from "./singbox-panel-card-style.js";
 
-const CARD_VERSION = "0.1.5";
+const CARD_VERSION = "0.1.6";
 
 // unique_id formats used by the ha-singbox integration:
 //   select: "{entry_id}_group_{group_tag}"
@@ -79,7 +79,7 @@ class SingBoxPanelCard extends LitElement {
                 throw new Error("registry is unavailable");
             }
             const isMarkedGroup = (e) =>
-                e.domain === "select" &&
+                this._domain(e) === "select" &&
                 e.unique_id &&
                 e.unique_id.includes(GROUP_MARK) &&
                 !e.unique_id.endsWith(CLASH_MODE_SUFFIX);
@@ -126,11 +126,13 @@ class SingBoxPanelCard extends LitElement {
             // does not link them to an entry.
             this._model = this._buildModel(entries);
             if (this._model.groups.length === 0) {
-                const allSelects = registry.filter((e) => e.domain === "select");
+                const allSelects = registry.filter(
+                    (e) => this._domain(e) === "select"
+                );
                 const markedSelects = markedGroups(registry);
                 const pingSensors = registry.filter(
                     (e) =>
-                        e.domain === "sensor" &&
+                        this._domain(e) === "sensor" &&
                         e.unique_id &&
                         e.unique_id.includes(PING_MARK)
                 );
@@ -150,7 +152,7 @@ class SingBoxPanelCard extends LitElement {
                         const uid = e.unique_id
                             ? e.unique_id.slice(0, 40)
                             : "—";
-                        return `${e.entity_id} (${e.domain}) [${uid}]`;
+                        return `${e.entity_id} (${this._domain(e)}) [${uid}]`;
                     })
                     .join(", ");
                 if (pinRecords.length) {
@@ -159,7 +161,7 @@ class SingBoxPanelCard extends LitElement {
                         pinRecords
                             .map(
                                 (e) =>
-                                    `${e.entity_id} ${e.domain} ${e.unique_id ?? ""}`
+                                    `${e.entity_id} ${this._domain(e)} ${e.unique_id ?? ""}`
                             )
                             .join("\n")
                     );
@@ -191,7 +193,7 @@ class SingBoxPanelCard extends LitElement {
         const pings = {}; // proxy tag -> ping sensor entity_id
         for (const e of registryEntries) {
             if (
-                e.domain === "sensor" &&
+                this._domain(e) === "sensor" &&
                 e.unique_id &&
                 e.unique_id.includes(PING_MARK)
             ) {
@@ -206,7 +208,7 @@ class SingBoxPanelCard extends LitElement {
         const inGroups = new Set();
         for (const e of registryEntries) {
             if (
-                e.domain !== "select" ||
+                this._domain(e) !== "select" ||
                 !e.unique_id ||
                 !e.unique_id.includes(GROUP_MARK) ||
                 e.unique_id.endsWith(CLASH_MODE_SUFFIX)
@@ -242,7 +244,7 @@ class SingBoxPanelCard extends LitElement {
         const sensorBySuffix = (suffix) => {
             const e = registryEntries.find(
                 (ent) =>
-                    ent.domain === "sensor" &&
+                    this._domain(ent) === "sensor" &&
                     ent.unique_id &&
                     ent.unique_id.endsWith(suffix)
             );
@@ -250,7 +252,7 @@ class SingBoxPanelCard extends LitElement {
         };
         const clashMode = registryEntries.find(
             (e) =>
-                e.domain === "select" &&
+                this._domain(e) === "select" &&
                 e.unique_id &&
                 e.unique_id.endsWith(CLASH_MODE_SUFFIX)
         );
@@ -273,6 +275,14 @@ class SingBoxPanelCard extends LitElement {
 
     _entity(id) {
         return id ? this._hass.states[id] : undefined;
+    }
+
+    // Real HA registry entries from config/entity_registry/list have no
+    // `domain` field (only `platform` + the entity_id) — the domain is the
+    // entity_id prefix.
+    _domain(e) {
+        if (e.entity_id) return e.entity_id.split(".")[0];
+        return e.domain || "";
     }
 
     _stateValue(id) {

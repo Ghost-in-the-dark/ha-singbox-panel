@@ -75,25 +75,25 @@
             "sensor.eu_out_ping": { state: "160", attributes: { unit_of_measurement: "ms" } },
         };
         const registry = [
-            { entity_id: "sensor.singbox_version", domain: "sensor", unique_id: `${entryId}_version` },
-            { entity_id: "sensor.singbox_uplink", domain: "sensor", unique_id: `${entryId}_uplink` },
-            { entity_id: "sensor.singbox_downlink", domain: "sensor", unique_id: `${entryId}_downlink` },
-            { entity_id: "sensor.singbox_uplink_total", domain: "sensor", unique_id: `${entryId}_uplink_total` },
-            { entity_id: "sensor.singbox_downlink_total", domain: "sensor", unique_id: `${entryId}_downlink_total` },
-            { entity_id: "sensor.singbox_memory", domain: "sensor", unique_id: `${entryId}_memory` },
-            { entity_id: "sensor.singbox_connections_in", domain: "sensor", unique_id: `${entryId}_connections_in` },
-            { entity_id: "select.telaga_out", domain: "select", unique_id: `${entryId}_group_telaga-out` },
-            { entity_id: "select.ru_out", domain: "select", unique_id: `${entryId}_group_Ru-out` },
-            { entity_id: "select.singbox_clash_mode", domain: "select", unique_id: `${entryId}_clash_mode` },
-            { entity_id: "sensor.telaga_1_out_ping", domain: "sensor", unique_id: `${entryId}_ping_telaga-1-out` },
-            { entity_id: "sensor.telaga_2_out_ping", domain: "sensor", unique_id: `${entryId}_ping_telaga-2-out` },
-            { entity_id: "sensor.telaga_urltest_out_ping", domain: "sensor", unique_id: `${entryId}_ping_telaga-urltest-out` },
-            { entity_id: "sensor.ru_1_out_ping", domain: "sensor", unique_id: `${entryId}_ping_Ru-1-out` },
-            { entity_id: "sensor.ru_2_out_ping", domain: "sensor", unique_id: `${entryId}_ping_Ru-2-out` },
-            { entity_id: "sensor.ru_3_out_ping", domain: "sensor", unique_id: `${entryId}_ping_Ru-3-out` },
-            { entity_id: "sensor.ru_urltest_out_ping", domain: "sensor", unique_id: `${entryId}_ping_Ru-urltest-out` },
-            { entity_id: "sensor.main_out_ping", domain: "sensor", unique_id: `${entryId}_ping_main-out` },
-            { entity_id: "sensor.eu_out_ping", domain: "sensor", unique_id: `${entryId}_ping_EU-out` },
+            { entity_id: "sensor.singbox_version", platform: "singbox", unique_id: `${entryId}_version` },
+            { entity_id: "sensor.singbox_uplink", platform: "singbox", unique_id: `${entryId}_uplink` },
+            { entity_id: "sensor.singbox_downlink", platform: "singbox", unique_id: `${entryId}_downlink` },
+            { entity_id: "sensor.singbox_uplink_total", platform: "singbox", unique_id: `${entryId}_uplink_total` },
+            { entity_id: "sensor.singbox_downlink_total", platform: "singbox", unique_id: `${entryId}_downlink_total` },
+            { entity_id: "sensor.singbox_memory", platform: "singbox", unique_id: `${entryId}_memory` },
+            { entity_id: "sensor.singbox_connections_in", platform: "singbox", unique_id: `${entryId}_connections_in` },
+            { entity_id: "select.telaga_out", platform: "singbox", unique_id: `${entryId}_group_telaga-out` },
+            { entity_id: "select.ru_out", platform: "singbox", unique_id: `${entryId}_group_Ru-out` },
+            { entity_id: "select.singbox_clash_mode", platform: "singbox", unique_id: `${entryId}_clash_mode` },
+            { entity_id: "sensor.telaga_1_out_ping", platform: "singbox", unique_id: `${entryId}_ping_telaga-1-out` },
+            { entity_id: "sensor.telaga_2_out_ping", platform: "singbox", unique_id: `${entryId}_ping_telaga-2-out` },
+            { entity_id: "sensor.telaga_urltest_out_ping", platform: "singbox", unique_id: `${entryId}_ping_telaga-urltest-out` },
+            { entity_id: "sensor.ru_1_out_ping", platform: "singbox", unique_id: `${entryId}_ping_Ru-1-out` },
+            { entity_id: "sensor.ru_2_out_ping", platform: "singbox", unique_id: `${entryId}_ping_Ru-2-out` },
+            { entity_id: "sensor.ru_3_out_ping", platform: "singbox", unique_id: `${entryId}_ping_Ru-3-out` },
+            { entity_id: "sensor.ru_urltest_out_ping", platform: "singbox", unique_id: `${entryId}_ping_Ru-urltest-out` },
+            { entity_id: "sensor.main_out_ping", platform: "singbox", unique_id: `${entryId}_ping_main-out` },
+            { entity_id: "sensor.eu_out_ping", platform: "singbox", unique_id: `${entryId}_ping_EU-out` },
         ];
 
         window.__calls = [];
@@ -165,9 +165,9 @@
         window.__addCard4 = () => {
             window.__registryDeviceId = "other";
             window.__foreignRegistry = [
-                { entity_id: "sensor.wg_status", domain: "sensor", unique_id: "wg_status" },
-                { entity_id: "sensor.wg_rx_bytes", domain: "sensor", unique_id: "wg_rx" },
-                { entity_id: "binary_sensor.wg_connected", domain: "binary_sensor", unique_id: "wg_conn" },
+                { entity_id: "sensor.wg_status", platform: "other", unique_id: "wg_status" },
+                { entity_id: "sensor.wg_rx_bytes", platform: "other", unique_id: "wg_rx" },
+                { entity_id: "binary_sensor.wg_connected", platform: "other", unique_id: "wg_conn" },
             ];
             const card4 = document.createElement("singbox-panel-card");
             card4.setConfig({ title: "Foreign", device_id: "other" });
