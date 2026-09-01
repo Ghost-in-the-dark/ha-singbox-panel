@@ -271,4 +271,13 @@ export const cardStyles = css`
         color: var(--disabled-text-color);
         text-align: right;
     }
+    .fallback-note {
+        margin-top: 12px;
+        padding: 8px 10px;
+        border-radius: 8px;
+        font-size: 12px;
+        line-height: 1.4;
+        color: #f9a825;
+        background: color-mix(in srgb, #f9a825 12%, transparent);
+    }
 `;

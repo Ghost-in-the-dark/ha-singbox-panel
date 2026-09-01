@@ -176,6 +176,25 @@ try {
         (await page.locator("#card2 h2").textContent()) === "Pinned"
     );
 
+    // -- third card: pin matches nothing, registry not device-linked ---------
+    // emulates the user's HA where sing-box entities have device_id: null
+    await page.evaluate(() => window.__addCard3());
+    await page.waitForSelector("#card3 .node", { timeout: 5000 });
+    check(
+        "fallback card renders groups",
+        (await page.locator("#card3 .group").count()) === 3 &&
+            (await page.locator("#card3 .node").count()) === 9,
+        `${await page.locator("#card3 .group").count()} blocks / ${await page.locator("#card3 .node").count()} nodes`
+    );
+    const fallbackNote = await page
+        .locator("#card3 .fallback-note")
+        .textContent();
+    check(
+        "fallback warning shown",
+        fallbackNote.includes("показаны все экземпляры sing-box"),
+        fallbackNote
+    );
+
     await page.screenshot({ path: "tests/stand.png", fullPage: true });
     console.log("  screenshot: tests/stand.png");
 } finally {

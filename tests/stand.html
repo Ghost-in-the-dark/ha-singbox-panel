@@ -97,13 +97,20 @@
         ];
 
         window.__calls = [];
+        // device_id assigned to every registry entry; the stand switches it to
+        // null to emulate a HA where sing-box entities are not linked to the
+        // device at all (the user's hard case)
+        window.__registryDeviceId = "dev1";
         window.__fakeHass = {
             states,
             async callWS(msg) {
                 // deliberately no config_entries/get and no config_entry_id:
                 // the card must not depend on them
                 if (msg.type === "config/entity_registry/list") {
-                    return registry.map((e) => ({ ...e, device_id: "dev1" }));
+                    return registry.map((e) => ({
+                        ...e,
+                        device_id: window.__registryDeviceId,
+                    }));
                 }
                 throw new Error(`unknown WS call: ${msg.type}`);
             },
@@ -116,6 +123,7 @@
 <body>
     <div id="card"></div>
     <div id="card2"></div>
+    <div id="card3"></div>
 
     <script type="module">
         import "../singbox-panel-card.js";
@@ -135,6 +143,16 @@
             card2.setConfig({ title: "Pinned", device_id: "dev1" });
             document.getElementById("card2").appendChild(card2);
             card2.hass = window.__fakeHass;
+        };
+        // third card: entities NOT linked to any device + a device_id pin that
+        // matches nothing -> the card must fall back to whole-registry markers
+        // and still render, with a visible warning
+        window.__addCard3 = () => {
+            window.__registryDeviceId = null;
+            const card3 = document.createElement("singbox-panel-card");
+            card3.setConfig({ title: "Fallback", device_id: "no-such-device" });
+            document.getElementById("card3").appendChild(card3);
+            card3.hass = window.__fakeHass;
         };
     </script>
 </body>
