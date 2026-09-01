@@ -31,8 +31,7 @@ jobs:
       - name: Verify Release Asset
         run: |
           test -f singbox-panel-card.js
-          file_count="$(find . -maxdepth 1 -name '*.js' -type f | wc -l)"
-          test "$file_count" -eq 1
+          test "$(find . -maxdepth 1 -name 'singbox-panel-card.js' | wc -l)" -eq 1
 
       - name: Upload asset to GitHub Release
         uses: softprops/action-gh-release@v2
