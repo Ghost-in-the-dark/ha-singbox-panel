@@ -86,6 +86,11 @@ try {
         .locator(".ping")
         .textContent();
     check("standalone ping badge", standalonePing.trim() === "160 ms", standalonePing.trim());
+    check(
+        "synthetic GLOBAL hidden",
+        (await page.locator(".node", { hasText: "GLOBAL" }).count()) === 0,
+        "GLOBAL still visible"
+    );
 
     const activeNodes = await page.locator(".node.active .node-name").allTextContents();
     check(
@@ -291,6 +296,11 @@ try {
                 c.data.outbound_tag === "main-out" &&
                 c.data.entity_id === "sensor.main_out_ping"
         ),
+        JSON.stringify(calls.slice(-8))
+    );
+    check(
+        "test-all never targets GLOBAL",
+        !calls.some((c) => c.service === "url_test" && c.data.outbound_tag === "GLOBAL"),
         JSON.stringify(calls.slice(-8))
     );
     check("test-all button disabled while running", await testAllBtn.isDisabled());

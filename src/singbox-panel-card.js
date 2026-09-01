@@ -2,7 +2,7 @@ import { LitElement, html } from "lit";
 import { cardStyles } from "./singbox-panel-card-style.js";
 import "./singbox-panel-card-editor.js";
 
-const CARD_VERSION = "0.1.11";
+const CARD_VERSION = "0.1.12";
 
 // unique_id formats used by the ha-singbox integration:
 //   select: "{entry_id}_group_{group_tag}"
@@ -11,6 +11,9 @@ const CARD_VERSION = "0.1.11";
 const GROUP_MARK = "_group_";
 const PING_MARK = "_ping_";
 const CLASH_MODE_SUFFIX = "_clash_mode";
+// Synthetic clash-API group present in /proxies but with no backing outbound
+// (url-test on it always fails with 404) — never surfaced by the card.
+const SYNTHETIC_GLOBAL = "GLOBAL";
 
 const DEFAULT_TITLE = "Sing-box";
 
@@ -233,6 +236,7 @@ class SingBoxPanelCard extends LitElement {
                 const tag = e.unique_id.slice(
                     e.unique_id.lastIndexOf(PING_MARK) + PING_MARK.length
                 );
+                if (tag === SYNTHETIC_GLOBAL) continue;
                 pings[tag] = e.entity_id;
             }
         }

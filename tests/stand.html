@@ -73,6 +73,8 @@
             "sensor.ru_urltest_out_ping": { state: "191", attributes: { unit_of_measurement: "ms" } },
             "sensor.main_out_ping": { state: "219", attributes: { unit_of_measurement: "ms" } },
             "sensor.eu_out_ping": { state: "160", attributes: { unit_of_measurement: "ms" } },
+            // GLOBAL: synthetic clash-API group — must never be shown or tested
+            "sensor.singbox_global_ping": { state: "unavailable", attributes: {} },
         };
         const registry = [
             { entity_id: "sensor.singbox_version", platform: "singbox", unique_id: `${entryId}_version` },
@@ -94,6 +96,7 @@
             { entity_id: "sensor.ru_urltest_out_ping", platform: "singbox", unique_id: `${entryId}_ping_Ru-urltest-out` },
             { entity_id: "sensor.main_out_ping", platform: "singbox", unique_id: `${entryId}_ping_main-out` },
             { entity_id: "sensor.eu_out_ping", platform: "singbox", unique_id: `${entryId}_ping_EU-out` },
+            { entity_id: "sensor.singbox_global_ping", platform: "singbox", unique_id: `${entryId}_ping_GLOBAL` },
         ];
 
         window.__calls = [];
