@@ -1,0 +1,18 @@
+{
+  "name": "ha-singbox-panel",
+  "version": "0.1.0",
+  "description": "Lovelace card: a beautiful panel for the sing-box integration",
+  "type": "module",
+  "scripts": {
+    "build": "node esbuild.config.js",
+    "dev": "node esbuild.config.js --dev",
+    "watch": "node esbuild.config.js --dev --watch"
+  },
+  "devDependencies": {
+    "esbuild": "^0.24.0",
+    "playwright-core": "^1.62.1"
+  },
+  "dependencies": {
+    "lit": "3.1.2"
+  }
+}

@@ -1,0 +1,404 @@
+import { LitElement, html } from "lit";
+import { cardStyles } from "./singbox-panel-card-style.js";
+
+const CARD_VERSION = "0.1.0";
+
+// unique_id formats used by the ha-singbox integration:
+//   select: "{entry_id}_group_{group_tag}"
+//   ping:   "{entry_id}_ping_{proxy_tag}"
+//   mode:   "{entry_id}_clash_mode"
+const GROUP_MARK = "_group_";
+const PING_MARK = "_ping_";
+const CLASH_MODE_SUFFIX = "_clash_mode";
+
+const DEFAULT_TITLE = "Sing-box";
+
+class SingBoxPanelCard extends LitElement {
+    static properties = {
+        _state: { state: true }, // "loading" | "error" | "ready"
+        _message: { state: true },
+        _model: { state: true },
+        _testing: { state: true }, // { [groupTag]: true }
+    };
+
+    static styles = cardStyles;
+
+    constructor() {
+        super();
+        this._hass = null;
+        this._config = {};
+        this._discovered = false;
+        this._state = "loading";
+        this._message = "";
+        this._model = null;
+        this._testing = {};
+    }
+
+    static getStubConfig() {
+        return { title: DEFAULT_TITLE };
+    }
+
+    setConfig(config) {
+        if (!config || typeof config !== "object") {
+            throw new Error("Invalid configuration");
+        }
+        this._config = { title: DEFAULT_TITLE, ...config };
+    }
+
+    getCardSize() {
+        return 4;
+    }
+
+    set hass(hass) {
+        this._hass = hass;
+        if (hass && !this._discovered) {
+            this._discovered = true;
+            this._discover();
+        }
+    }
+
+    // -- discovery ----------------------------------------------------------
+
+    async _discover() {
+        this._state = "loading";
+        try {
+            const entries = await this._hass.callWS({ type: "config_entries/get" });
+            const singboxEntries = entries.filter((e) => e.domain === "singbox");
+            if (singboxEntries.length === 0) {
+                this._state = "error";
+                this._message =
+                    "Интеграция sing-box не найдена. Установите и настройте ha-singbox.";
+                return;
+            }
+            let entryId = singboxEntries[0].entry_id;
+            const registry = await this._hass.callWS({
+                type: "config/entity_registry/list",
+            });
+            // An explicit entity in the config pins the card to its entry.
+            if (this._config.entity) {
+                const pinned = registry.find(
+                    (e) => e.entity_id === this._config.entity
+                );
+                if (pinned && pinned.config_entry_id) {
+                    entryId = pinned.config_entry_id;
+                }
+            }
+            const mine = registry.filter(
+                (e) => e.config_entry_id === entryId
+            );
+            this._model = this._buildModel(mine);
+            if (this._model.groups.length === 0) {
+                this._state = "error";
+                this._message =
+                    "Группы прокси не найдены. Проверьте, что в конфигурации sing-box есть selector-группы.";
+                return;
+            }
+            this._state = "ready";
+        } catch (err) {
+            this._state = "error";
+            this._message = `Не удалось загрузить данные: ${err && err.message ? err.message : err}`;
+        }
+    }
+
+    _buildModel(registryEntries) {
+        const pings = {}; // proxy tag -> ping sensor entity_id
+        for (const e of registryEntries) {
+            if (
+                e.domain === "sensor" &&
+                e.unique_id &&
+                e.unique_id.includes(PING_MARK)
+            ) {
+                const tag = e.unique_id.slice(
+                    e.unique_id.lastIndexOf(PING_MARK) + PING_MARK.length
+                );
+                pings[tag] = e.entity_id;
+            }
+        }
+
+        const groups = [];
+        for (const e of registryEntries) {
+            if (
+                e.domain !== "select" ||
+                !e.unique_id ||
+                !e.unique_id.includes(GROUP_MARK) ||
+                e.unique_id.endsWith(CLASH_MODE_SUFFIX)
+            ) {
+                continue;
+            }
+            const groupTag = e.unique_id.slice(
+                e.unique_id.lastIndexOf(GROUP_MARK) + GROUP_MARK.length
+            );
+            const state = this._hass.states[e.entity_id];
+            const options =
+                state && state.attributes && Array.isArray(state.attributes.options)
+                    ? state.attributes.options
+                    : [];
+            groups.push({
+                tag: groupTag,
+                entityId: e.entity_id,
+                options: options.map((tag) => ({
+                    tag,
+                    pingEntity: pings[tag] || null,
+                })),
+            });
+        }
+
+        const sensorBySuffix = (suffix) => {
+            const e = registryEntries.find(
+                (ent) =>
+                    ent.domain === "sensor" &&
+                    ent.unique_id &&
+                    ent.unique_id.endsWith(suffix)
+            );
+            return e ? e.entity_id : null;
+        };
+        const clashMode = registryEntries.find(
+            (e) =>
+                e.domain === "select" &&
+                e.unique_id &&
+                e.unique_id.endsWith(CLASH_MODE_SUFFIX)
+        );
+
+        return {
+            version: sensorBySuffix("_version"),
+            uplink: sensorBySuffix("_uplink"),
+            downlink: sensorBySuffix("_downlink"),
+            uplinkTotal: sensorBySuffix("_uplink_total"),
+            downlinkTotal: sensorBySuffix("_downlink_total"),
+            memory: sensorBySuffix("_memory"),
+            connectionsIn: sensorBySuffix("_connections_in"),
+            clashMode: clashMode ? clashMode.entity_id : null,
+            groups,
+        };
+    }
+
+    // -- helpers ------------------------------------------------------------
+
+    _entity(id) {
+        return id ? this._hass.states[id] : undefined;
+    }
+
+    _stateValue(id) {
+        const state = this._entity(id);
+        if (!state) return null;
+        return state.state === "unavailable" ? null : state.state;
+    }
+
+    _formatSpeed(id) {
+        const state = this._entity(id);
+        if (!state || state.state === "unavailable" || state.state === "unknown") {
+            return { value: "—", unit: "" };
+        }
+        const value = Number(state.state);
+        if (!Number.isFinite(value)) {
+            return { value: "—", unit: "" };
+        }
+        return {
+            value: value.toLocaleString(undefined, { maximumFractionDigits: 1 }),
+            unit: state.attributes && state.attributes.unit_of_measurement
+                ? state.attributes.unit_of_measurement
+                : "",
+        };
+    }
+
+    _formatBytes(id) {
+        const state = this._entity(id);
+        if (!state || state.state === "unavailable" || state.state === "unknown") {
+            return "—";
+        }
+        const value = Number(state.state);
+        if (!Number.isFinite(value)) {
+            return "—";
+        }
+        const units = ["B", "KiB", "MiB", "GiB", "TiB"];
+        let scaled = value;
+        let unit = 0;
+        while (scaled >= 1024 && unit < units.length - 1) {
+            scaled /= 1024;
+            unit += 1;
+        }
+        const digits = unit ? 1 : 0;
+        return `${scaled.toLocaleString(undefined, { maximumFractionDigits: digits })} ${units[unit]}`;
+    }
+
+    _ping(option) {
+        const state = this._entity(option.pingEntity);
+        if (!state || state.state === "unavailable" || state.state === "unknown") {
+            return null;
+        }
+        const ms = Number(state.state);
+        return Number.isFinite(ms) ? ms : null;
+    }
+
+    _pingClass(ms) {
+        if (ms === null) return "none";
+        if (ms <= 100) return "good";
+        if (ms <= 300) return "warn";
+        return "bad";
+    }
+
+    _pingText(ms) {
+        return ms === null ? "—" : `${ms} ms`;
+    }
+
+    // -- actions ------------------------------------------------------------
+
+    async _selectNode(groupTag, nodeTag) {
+        if (!this._hass) return;
+        try {
+            await this._hass.callService("singbox", "select_outbound", {
+                group_tag: groupTag,
+                outbound_tag: nodeTag,
+            });
+        } catch (err) {
+            console.error("singbox-panel: select_outbound failed", err);
+        }
+    }
+
+    async _testGroup(groupTag) {
+        if (!this._hass || this._testing[groupTag]) return;
+        this._testing = { ...this._testing, [groupTag]: true };
+        try {
+            await this._hass.callService("singbox", "url_test", {
+                outbound_tag: groupTag,
+            });
+        } catch (err) {
+            console.error("singbox-panel: url_test failed", err);
+        } finally {
+            setTimeout(() => {
+                this._testing = { ...this._testing, [groupTag]: false };
+            }, 4000);
+        }
+    }
+
+    // -- render -------------------------------------------------------------
+
+    render() {
+        if (this._state === "error") {
+            return html`
+                <div class="card">
+                    <div class="state-msg">${this._message}</div>
+                </div>
+            `;
+        }
+        if (this._state === "loading" || !this._model) {
+            return html`
+                <div class="card">
+                    <div class="state-msg">
+                        <div class="spinner"></div>
+                        <span>Загрузка данных sing-box…</span>
+                    </div>
+                </div>
+            `;
+        }
+
+        const m = this._model;
+        const version = this._stateValue(m.version);
+        const mode = this._stateValue(m.clashMode);
+        return html`
+            <div class="card">
+                <div class="header">
+                    <h2>${this._config.title}</h2>
+                    <div class="meta">
+                        ${version ? html`<span>${version}</span>` : ""}
+                        ${mode ? html`<span> · ${mode}</span>` : ""}
+                    </div>
+                </div>
+
+                <div class="speeds">
+                    ${this._speedTile("up", "mdi:arrow-up-bold", "Загрузка", m.uplink)}
+                    ${this._speedTile("down", "mdi:arrow-down-bold", "Скачивание", m.downlink)}
+                </div>
+
+                <div class="totals">
+                    ${this._totalChip("mdi:arrow-up", this._formatBytes(m.uplinkTotal))}
+                    ${this._totalChip("mdi:arrow-down", this._formatBytes(m.downlinkTotal))}
+                    ${this._totalChip("mdi:memory", this._formatBytes(m.memory))}
+                    ${this._totalChip("mdi:lan-connect", this._stateValue(m.connectionsIn))}
+                </div>
+
+                ${m.groups.map((g) => this._renderGroup(g))}
+
+                <div class="footer">sing-box panel · v${CARD_VERSION}</div>
+            </div>
+        `;
+    }
+
+    _speedTile(kind, icon, label, entityId) {
+        const { value, unit } = this._formatSpeed(entityId);
+        return html`
+            <div class="tile ${kind}">
+                <ha-icon icon=${icon}></ha-icon>
+                <div class="tile-body">
+                    <div class="tile-label">${label}</div>
+                    <div class="tile-value">${value}<span class="unit">${unit}</span></div>
+                </div>
+            </div>
+        `;
+    }
+
+    _totalChip(icon, text) {
+        return html`
+            <span class="chip-stat">
+                <ha-icon icon=${icon}></ha-icon>
+                <b>${text}</b>
+            </span>
+        `;
+    }
+
+    _renderGroup(group) {
+        const state = this._entity(group.entityId);
+        const current =
+            state && state.state !== "unavailable" ? state.state : null;
+        const testing = Boolean(this._testing[group.tag]);
+        return html`
+            <div class="group">
+                <div class="group-head">
+                    <span class="group-name">${group.tag}</span>
+                    <span class="group-current">
+                        ${current ? html`→ <b>${current}</b>` : ""}
+                    </span>
+                    <button
+                        class="test-btn"
+                        ?disabled=${testing}
+                        @click=${() => this._testGroup(group.tag)}
+                    >
+                        <ha-icon icon="mdi:flash-outline"></ha-icon>
+                        ${testing ? "Тест…" : "Тест"}
+                    </button>
+                </div>
+                <div class="nodes">
+                    ${group.options.map(
+                        (option) => this._renderNode(group, option, current)
+                    )}
+                </div>
+            </div>
+        `;
+    }
+
+    _renderNode(group, option, current) {
+        const ms = this._ping(option);
+        const active = option.tag === current;
+        return html`
+            <button
+                class="node ${active ? "active" : ""}"
+                @click=${() => this._selectNode(group.tag, option.tag)}
+            >
+                <span class="node-name">${option.tag}</span>
+                ${ms !== null
+                    ? html`<span class="ping ${this._pingClass(ms)}">${this._pingText(ms)}</span>`
+                    : ""}
+            </button>
+        `;
+    }
+}
+
+customElements.define("singbox-panel-card", SingBoxPanelCard);
+
+window.customCards = window.customCards || [];
+window.customCards.push({
+    type: "singbox-panel-card",
+    name: "Sing-box Panel",
+    description: "Панель мониторинга и управления прокси sing-box",
+    preview: false,
+});

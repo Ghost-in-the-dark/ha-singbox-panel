@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="utf-8">
+    <title>Sing-box Panel Card — test stand</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 24px;
+            background: #121212;
+            color: #e1e1e1;
+            font-family: Roboto, sans-serif;
+        }
+        #card {
+            max-width: 560px;
+            margin: 0 auto;
+        }
+        /* minimal stand-in for ha-icon used by the card */
+        ha-icon {
+            display: inline-block;
+            width: 22px;
+            height: 22px;
+            background: currentColor;
+            -webkit-mask: var(--stand-icon-mask, none);
+            mask: var(--stand-icon-mask, none);
+        }
+        .log {
+            max-width: 560px;
+            margin: 16px auto 0;
+            font-size: 12px;
+            font-family: monospace;
+            white-space: pre-wrap;
+            color: #8bc34a;
+        }
+    </style>
+    <script>
+        // ---- fake ha-icon (renders a simple shape, keeps the card working) ----
+        class FakeIcon extends HTMLElement {
+            connectedCallback() {
+                const shapes = {
+                    "mdi:arrow-up-bold": "polygon(50% 0, 100% 60%, 62% 60%, 62% 100%, 38% 100%, 38% 60%, 0 60%)",
+                    "mdi:arrow-down-bold": "polygon(50% 100%, 0 40%, 38% 40%, 38% 0, 62% 0, 62% 40%, 100% 40%)",
+                    "mdi:arrow-up": "polygon(50% 0, 50% 100%, 50% 100%, 20% 70%, 35% 70%, 35% 100%, 65% 100%, 65% 70%, 80% 70%, 50% 0)",
+                    "mdi:arrow-down": "polygon(50% 100%, 50% 0, 50% 0, 80% 30%, 65% 30%, 65% 0, 35% 0, 35% 30%, 20% 30%, 50% 100%)",
+                    "mdi:memory": "none",
+                    "mdi:lan-connect": "none",
+                    "mdi:flash-outline": "polygon(45% 0, 20% 55%, 42% 55%, 35% 100%, 75% 45%, 52% 45%, 65% 0)",
+                };
+                this.style.setProperty("--stand-icon-mask", shapes[this.icon] || "none");
+            }
+        }
+        customElements.define("ha-icon", FakeIcon);
+
+        // ---- fake HA object ------------------------------------------------
+        const entryId = "abc123";
+        const states = {
+            "sensor.singbox_version": { state: "1.13.18", attributes: {} },
+            "sensor.singbox_uplink": { state: "1641", attributes: { unit_of_measurement: "B/s" } },
+            "sensor.singbox_downlink": { state: "18234", attributes: { unit_of_measurement: "B/s" } },
+            "sensor.singbox_uplink_total": { state: "20500405", attributes: { unit_of_measurement: "B" } },
+            "sensor.singbox_downlink_total": { state: "1006032634", attributes: { unit_of_measurement: "B" } },
+            "sensor.singbox_memory": { state: "31375360", attributes: { unit_of_measurement: "B" } },
+            "sensor.singbox_connections_in": { state: "31", attributes: {} },
+            "select.telaga_out": { state: "telaga-urltest-out", attributes: { options: ["telaga-1-out", "telaga-2-out", "telaga-urltest-out"] } },
+            "select.ru_out": { state: "Ru-2-out", attributes: { options: ["Ru-1-out", "Ru-2-out", "Ru-3-out", "Ru-urltest-out"] } },
+            "select.singbox_clash_mode": { state: "Rule", attributes: { options: ["Rule", "Global", "Direct"] } },
+            "sensor.telaga_1_out_ping": { state: "180", attributes: { unit_of_measurement: "ms" } },
+            "sensor.telaga_2_out_ping": { state: "167", attributes: { unit_of_measurement: "ms" } },
+            "sensor.telaga_urltest_out_ping": { state: "180", attributes: { unit_of_measurement: "ms" } },
+            "sensor.ru_1_out_ping": { state: "191", attributes: { unit_of_measurement: "ms" } },
+            "sensor.ru_2_out_ping": { state: "177", attributes: { unit_of_measurement: "ms" } },
+            "sensor.ru_3_out_ping": { state: "139", attributes: { unit_of_measurement: "ms" } },
+            "sensor.ru_urltest_out_ping": { state: "191", attributes: { unit_of_measurement: "ms" } },
+        };
+        const registry = [
+            { entity_id: "sensor.singbox_version", domain: "sensor", unique_id: `${entryId}_version`, config_entry_id: entryId },
+            { entity_id: "sensor.singbox_uplink", domain: "sensor", unique_id: `${entryId}_uplink`, config_entry_id: entryId },
+            { entity_id: "sensor.singbox_downlink", domain: "sensor", unique_id: `${entryId}_downlink`, config_entry_id: entryId },
+            { entity_id: "sensor.singbox_uplink_total", domain: "sensor", unique_id: `${entryId}_uplink_total`, config_entry_id: entryId },
+            { entity_id: "sensor.singbox_downlink_total", domain: "sensor", unique_id: `${entryId}_downlink_total`, config_entry_id: entryId },
+            { entity_id: "sensor.singbox_memory", domain: "sensor", unique_id: `${entryId}_memory`, config_entry_id: entryId },
+            { entity_id: "sensor.singbox_connections_in", domain: "sensor", unique_id: `${entryId}_connections_in`, config_entry_id: entryId },
+            { entity_id: "select.telaga_out", domain: "select", unique_id: `${entryId}_group_telaga-out`, config_entry_id: entryId },
+            { entity_id: "select.ru_out", domain: "select", unique_id: `${entryId}_group_Ru-out`, config_entry_id: entryId },
+            { entity_id: "select.singbox_clash_mode", domain: "select", unique_id: `${entryId}_clash_mode`, config_entry_id: entryId },
+            { entity_id: "sensor.telaga_1_out_ping", domain: "sensor", unique_id: `${entryId}_ping_telaga-1-out`, config_entry_id: entryId },
+            { entity_id: "sensor.telaga_2_out_ping", domain: "sensor", unique_id: `${entryId}_ping_telaga-2-out`, config_entry_id: entryId },
+            { entity_id: "sensor.telaga_urltest_out_ping", domain: "sensor", unique_id: `${entryId}_ping_telaga-urltest-out`, config_entry_id: entryId },
+            { entity_id: "sensor.ru_1_out_ping", domain: "sensor", unique_id: `${entryId}_ping_Ru-1-out`, config_entry_id: entryId },
+            { entity_id: "sensor.ru_2_out_ping", domain: "sensor", unique_id: `${entryId}_ping_Ru-2-out`, config_entry_id: entryId },
+            { entity_id: "sensor.ru_3_out_ping", domain: "sensor", unique_id: `${entryId}_ping_Ru-3-out`, config_entry_id: entryId },
+            { entity_id: "sensor.ru_urltest_out_ping", domain: "sensor", unique_id: `${entryId}_ping_Ru-urltest-out`, config_entry_id: entryId },
+        ];
+
+        window.__calls = [];
+        window.__fakeHass = {
+            states,
+            async callWS(msg) {
+                if (msg.type === "config_entries/get") {
+                    return [{ domain: "singbox", entry_id: entryId, title: "sing-box" }];
+                }
+                if (msg.type === "config/entity_registry/list") {
+                    return registry;
+                }
+                throw new Error(`unknown WS call: ${msg.type}`);
+            },
+            async callService(domain, service, data) {
+                window.__calls.push({ domain, service, data });
+            },
+        };
+    </script>
+</head>
+<body>
+    <div id="card"></div>
+    <div id="log" class="log">calls: []</div>
+
+    <script type="module">
+        import "../dist/singbox-panel-card.js";
+
+        const card = document.createElement("singbox-panel-card");
+        card.setConfig({ title: "Sing-box" });
+        document.getElementById("card").appendChild(card);
+
+        // attach the fake hass after a tick so the element is connected
+        await new Promise((r) => setTimeout(r, 50));
+        card.hass = window.__fakeHass;
+
+        // log service calls for the test to assert on
+        const poll = setInterval(() => {
+            document.getElementById("log").textContent =
+                "calls: " + JSON.stringify(window.__calls);
+        }, 200);
+    </script>
+</body>
+</html>
