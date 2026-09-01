@@ -100,10 +100,10 @@
         window.__fakeHass = {
             states,
             async callWS(msg) {
-                // deliberately no config_entries/get: the card must not
-                // depend on it, and the registry has no config_entry_id
+                // deliberately no config_entries/get and no config_entry_id:
+                // the card must not depend on them
                 if (msg.type === "config/entity_registry/list") {
-                    return registry;
+                    return registry.map((e) => ({ ...e, device_id: "dev1" }));
                 }
                 throw new Error(`unknown WS call: ${msg.type}`);
             },
@@ -115,6 +115,7 @@
 </head>
 <body>
     <div id="card"></div>
+    <div id="card2"></div>
 
     <script type="module">
         import "../singbox-panel-card.js";
@@ -123,9 +124,18 @@
         card.setConfig({ title: "Sing-box" });
         document.getElementById("card").appendChild(card);
 
-        // attach the fake hass after a tick so the element is connected
+        // attach the fake hass after a tick so the elements are connected
         await new Promise((r) => setTimeout(r, 50));
         card.hass = window.__fakeHass;
+
+        // second card, pinned to a device (device_id from the HA device URL);
+        // created on demand by the test to avoid selector collisions
+        window.__addCard2 = () => {
+            const card2 = document.createElement("singbox-panel-card");
+            card2.setConfig({ title: "Pinned", device_id: "dev1" });
+            document.getElementById("card2").appendChild(card2);
+            card2.hass = window.__fakeHass;
+        };
     </script>
 </body>
 </html>

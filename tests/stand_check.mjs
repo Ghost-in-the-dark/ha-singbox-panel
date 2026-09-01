@@ -162,6 +162,20 @@ try {
     );
     check("test button disabled while running", await firstTestBtn.isDisabled());
 
+    // -- second card pinned via device_id ------------------------------------
+    await page.evaluate(() => window.__addCard2());
+    await page.waitForSelector("#card2 .node", { timeout: 5000 });
+    check(
+        "device-pinned card finds groups",
+        (await page.locator("#card2 .group").count()) === 3 &&
+            (await page.locator("#card2 .node").count()) === 9,
+        `${await page.locator("#card2 .group").count()} blocks / ${await page.locator("#card2 .node").count()} nodes`
+    );
+    check(
+        "device-pinned card title",
+        (await page.locator("#card2 h2").textContent()) === "Pinned"
+    );
+
     await page.screenshot({ path: "tests/stand.png", fullPage: true });
     console.log("  screenshot: tests/stand.png");
 } finally {

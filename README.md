@@ -46,7 +46,11 @@ Add a manual card with type `custom:singbox-panel-card`:
 ```yaml
 type: custom:singbox-panel-card
 title: Sing-box          # optional, default "Sing-box"
-# entity: sensor.telaga_1_out_ping   # optional: pin to a specific sing-box
+# device_id: 4df21e9e7ffc2b82acdefad2eaf6ce6e   # optional: pin to the sing-box
+#                                               # device (from its HA device
+#                                               # page URL) when several
+#                                               # instances are configured
+# entity: sensor.telaga_1_out_ping   # optional: pin via an entity instead
                                     # instance when several are configured
 ```
 

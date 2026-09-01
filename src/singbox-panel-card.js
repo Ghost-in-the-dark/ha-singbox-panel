@@ -1,7 +1,7 @@
 import { LitElement, html } from "lit";
 import { cardStyles } from "./singbox-panel-card-style.js";
 
-const CARD_VERSION = "0.1.2";
+const CARD_VERSION = "0.1.3";
 
 // unique_id formats used by the ha-singbox integration:
 //   select: "{entry_id}_group_{group_tag}"
@@ -42,7 +42,15 @@ class SingBoxPanelCard extends LitElement {
         if (!config || typeof config !== "object") {
             throw new Error("Invalid configuration");
         }
-        this._config = { title: DEFAULT_TITLE, ...config };
+        const next = { title: DEFAULT_TITLE, ...config };
+        // Changing the pin (device/entity) re-runs discovery.
+        if (
+            next.device_id !== this._config.device_id ||
+            next.entity !== this._config.entity
+        ) {
+            this._discovered = false;
+        }
+        this._config = next;
     }
 
     getCardSize() {
@@ -68,16 +76,26 @@ class SingBoxPanelCard extends LitElement {
             if (!Array.isArray(registry)) {
                 throw new Error("registry is unavailable");
             }
-            // An explicit entity pins the card to its sing-box instance.
+            // Pin to a specific sing-box instance: by device (most reliable)
+            // or by an entity from its config entry.
             let entries = registry;
-            if (this._config.entity) {
+            if (this._config.device_id) {
+                entries = registry.filter(
+                    (e) => e.device_id === this._config.device_id
+                );
+            } else if (this._config.entity) {
                 const pinned = registry.find(
                     (e) => e.entity_id === this._config.entity
                 );
-                if (pinned && pinned.config_entry_id) {
-                    entries = registry.filter(
-                        (e) => e.config_entry_id === pinned.config_entry_id
-                    );
+                if (pinned) {
+                    entries = pinned.config_entry_id
+                        ? registry.filter(
+                              (e) =>
+                                  e.config_entry_id === pinned.config_entry_id
+                          )
+                        : registry.filter(
+                              (e) => e.device_id === pinned.device_id
+                          );
                 }
             }
             // sing-box entities are recognized by their unique_id markers
@@ -96,6 +114,8 @@ class SingBoxPanelCard extends LitElement {
                         e.unique_id &&
                         e.unique_id.includes(PING_MARK)
                 );
+                const pinned =
+                    this._config.device_id || this._config.entity ? entries.length : null;
                 const sample = markedSelects
                     .slice(0, 5)
                     .map((e) => `${e.entity_id} [${e.unique_id}]`)
@@ -103,7 +123,9 @@ class SingBoxPanelCard extends LitElement {
                 this._state = "error";
                 this._message =
                     markedSelects.length === 0
-                        ? `Группы прокси не найдены: в реестре нет сущностей sing-box (всего select: ${allSelects.length}, ping-сенсоров: ${pingSensors.length}). Проверьте, что ha-singbox установлена и настроена, затем перезапустите HA.`
+                        ? pinned
+                            ? `Группы прокси не найдены: по указанному device_id/entity сущностей нет (всего select: ${allSelects.length}, ping-сенсоров: ${pingSensors.length}). Проверьте device_id и что ha-singbox настроена.`
+                            : `Группы прокси не найдены: в реестре нет сущностей sing-box (всего select: ${allSelects.length}, ping-сенсоров: ${pingSensors.length}). Проверьте, что ha-singbox установлена и настроена, затем перезапустите HA.`
                         : `Группы прокси не найдены: select-сущности есть, но с неожиданным форматом unique_id (${sample}). Обновите ha-singbox и перезапустите HA.`;
                 return;
             }
