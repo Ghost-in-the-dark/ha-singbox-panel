@@ -6,7 +6,8 @@ const watch = process.argv.includes("--watch");
 const dev = process.argv.includes("--dev");
 
 const srcDir = "src";
-const outDir = dev ? (process.env.BUILD_DEV_PATH || "dist") : "dist";
+// HACS frontend plugins ship the bundled file at the repository root.
+const outDir = dev ? (process.env.BUILD_DEV_PATH || ".") : ".";
 const file = "singbox-panel-card";
 
 function ensureOutDir() {

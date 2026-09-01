@@ -30,8 +30,8 @@ jobs:
 
       - name: Verify Release Asset
         run: |
-          test -f dist/singbox-panel-card.js
-          file_count="$(find dist -maxdepth 1 -type f | wc -l)"
+          test -f singbox-panel-card.js
+          file_count="$(find . -maxdepth 1 -name '*.js' -type f | wc -l)"
           test "$file_count" -eq 1
 
       - name: Upload asset to GitHub Release
@@ -39,4 +39,4 @@ jobs:
         with:
           draft: true
           generate_release_notes: true
-          files: dist/singbox-panel-card.js
+          files: singbox-panel-card.js

@@ -112,10 +112,9 @@
 </head>
 <body>
     <div id="card"></div>
-    <div id="log" class="log">calls: []</div>
 
     <script type="module">
-        import "../dist/singbox-panel-card.js";
+        import "../singbox-panel-card.js";
 
         const card = document.createElement("singbox-panel-card");
         card.setConfig({ title: "Sing-box" });
@@ -124,12 +123,6 @@
         // attach the fake hass after a tick so the element is connected
         await new Promise((r) => setTimeout(r, 50));
         card.hass = window.__fakeHass;
-
-        // log service calls for the test to assert on
-        const poll = setInterval(() => {
-            document.getElementById("log").textContent =
-                "calls: " + JSON.stringify(window.__calls);
-        }, 200);
     </script>
 </body>
 </html>

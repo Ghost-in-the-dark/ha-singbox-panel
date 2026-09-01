@@ -166,15 +166,11 @@ export const cardStyles = css`
     }
     .node {
         display: inline-flex;
-        align-items: center;
-        gap: 7px;
+        align-items: stretch;
         border: 1px solid var(--divider-color, rgba(0, 0, 0, 0.12));
         border-radius: 10px;
-        padding: 6px 11px;
-        font-size: 13px;
-        cursor: pointer;
+        overflow: hidden;
         background: transparent;
-        color: var(--primary-text-color);
         transition: border-color 0.15s ease, background 0.15s ease;
     }
     .node:hover {
@@ -189,11 +185,47 @@ export const cardStyles = css`
         font-weight: 600;
         color: var(--primary-color);
     }
-    .node .node-name {
+    .node-select {
+        display: inline-flex;
+        align-items: center;
+        gap: 7px;
+        border: none;
+        background: transparent;
+        padding: 6px 6px 6px 11px;
+        font-size: 13px;
+        cursor: pointer;
+        color: var(--primary-text-color);
+        font-family: inherit;
+    }
+    .node-name {
         max-width: 180px;
         overflow: hidden;
         text-overflow: ellipsis;
         white-space: nowrap;
+    }
+    .node-ping {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        border: none;
+        border-left: 1px solid var(--divider-color, rgba(0, 0, 0, 0.12));
+        background: transparent;
+        padding: 0 8px;
+        cursor: pointer;
+        color: var(--secondary-text-color);
+        transition: color 0.15s ease, background 0.15s ease;
+    }
+    .node-ping:hover {
+        color: var(--primary-color);
+        background: color-mix(in srgb, var(--primary-color) 10%, transparent);
+    }
+    .node-ping[disabled] {
+        opacity: 0.5;
+        cursor: default;
+        pointer-events: none;
+    }
+    .node-ping ha-icon {
+        --mdc-icon-size: 15px;
     }
     .ping {
         font-size: 12px;

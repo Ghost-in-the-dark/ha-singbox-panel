@@ -35,8 +35,9 @@ traffic totals, per-proxy pings and one-click proxy switching.
 
 ### Manual
 
-Copy `dist/singbox-panel-card.js` into `config/www/` and add the resource
-`/local/singbox-panel-card.js` (type: JavaScript Module).
+Copy `singbox-panel-card.js` (from the release or `npm run build`) into
+`config/www/` and add the resource `/local/singbox-panel-card.js` (type:
+JavaScript Module).
 
 ## Usage
 
@@ -62,8 +63,8 @@ discovered from the ha-singbox integration automatically.
 
 ```bash
 npm install
-npm run build     # bundles dist/singbox-panel-card.js
-npm run dev       # minified build into dist (or BUILD_DEV_PATH)
+npm run build     # bundles singbox-panel-card.js at the repo root
+npm run dev       # minified build (or BUILD_DEV_PATH)
 ```
 
 The render smoke test runs the card headlessly against a fake HA object:

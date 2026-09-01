@@ -87,7 +87,10 @@ try {
     check("ping color class", pingClass.includes("warn"), pingClass);
 
     // -- interactions -------------------------------------------------------
-    await page.locator(".node", { hasText: "telaga-1-out" }).click();
+    await page
+        .locator(".node", { hasText: "telaga-1-out" })
+        .locator(".node-select")
+        .click();
     await page.waitForTimeout(150);
     let calls = await page.evaluate(() => window.__calls);
     check(
@@ -100,6 +103,22 @@ try {
         ),
         JSON.stringify(calls)
     );
+
+    // ping button on a node -> url_test of that node
+    const nodePingBtn = page
+        .locator(".node", { hasText: "telaga-1-out" })
+        .locator(".node-ping");
+    await nodePingBtn.click();
+    await page.waitForTimeout(150);
+    calls = await page.evaluate(() => window.__calls);
+    check(
+        "node ping button -> url_test",
+        calls.some(
+            (c) => c.service === "url_test" && c.data.outbound_tag === "telaga-1-out"
+        ),
+        JSON.stringify(calls)
+    );
+    check("node ping button disabled while running", await nodePingBtn.isDisabled());
 
     const firstTestBtn = page.locator(".group").nth(0).locator(".test-btn");
     await firstTestBtn.click();

@@ -271,6 +271,22 @@ class SingBoxPanelCard extends LitElement {
         }
     }
 
+    async _pingNode(nodeTag) {
+        if (!this._hass || this._testing[nodeTag]) return;
+        this._testing = { ...this._testing, [nodeTag]: true };
+        try {
+            await this._hass.callService("singbox", "url_test", {
+                outbound_tag: nodeTag,
+            });
+        } catch (err) {
+            console.error("singbox-panel: url_test failed", err);
+        } finally {
+            setTimeout(() => {
+                this._testing = { ...this._testing, [nodeTag]: false };
+            }, 4000);
+        }
+    }
+
     // -- render -------------------------------------------------------------
 
     render() {
@@ -379,16 +395,28 @@ class SingBoxPanelCard extends LitElement {
     _renderNode(group, option, current) {
         const ms = this._ping(option);
         const active = option.tag === current;
+        const pinging = Boolean(this._testing[option.tag]);
         return html`
-            <button
-                class="node ${active ? "active" : ""}"
-                @click=${() => this._selectNode(group.tag, option.tag)}
-            >
-                <span class="node-name">${option.tag}</span>
-                ${ms !== null
-                    ? html`<span class="ping ${this._pingClass(ms)}">${this._pingText(ms)}</span>`
-                    : ""}
-            </button>
+            <div class="node ${active ? "active" : ""}">
+                <button
+                    class="node-select"
+                    title="Выбрать ${option.tag}"
+                    @click=${() => this._selectNode(group.tag, option.tag)}
+                >
+                    <span class="node-name">${option.tag}</span>
+                    ${ms !== null
+                        ? html`<span class="ping ${this._pingClass(ms)}">${this._pingText(ms)}</span>`
+                        : ""}
+                </button>
+                <button
+                    class="node-ping"
+                    title="Проверить пинг ${option.tag}"
+                    ?disabled=${pinging}
+                    @click=${() => this._pingNode(option.tag)}
+                >
+                    <ha-icon icon="mdi:radar"></ha-icon>
+                </button>
+            </div>
         `;
     }
 }
