@@ -267,6 +267,90 @@ try {
         foreignMsg
     );
 
+    // -- "Проверить все" batch button on the main card ----------------------
+    const testAllBtn = page.locator(".test-all-btn").first();
+    check("test-all button rendered", (await testAllBtn.count()) > 0);
+    await testAllBtn.click();
+    await page.waitForTimeout(200);
+    calls = await page.evaluate(() => window.__calls);
+    check(
+        "test-all -> url_test for every group",
+        calls.some(
+            (c) =>
+                c.service === "url_test" &&
+                c.data.outbound_tag === "telaga-out" &&
+                c.data.entity_id === "select.telaga_out"
+        ),
+        JSON.stringify(calls.slice(-8))
+    );
+    check(
+        "test-all -> url_test for every standalone",
+        calls.some(
+            (c) =>
+                c.service === "url_test" &&
+                c.data.outbound_tag === "main-out" &&
+                c.data.entity_id === "sensor.main_out_ping"
+        ),
+        JSON.stringify(calls.slice(-8))
+    );
+    check("test-all button disabled while running", await testAllBtn.isDisabled());
+
+    // -- fifth card: excluded outbounds are hidden --------------------------
+    await page.evaluate(() => window.__addCard5());
+    await page.waitForSelector("#card5 .node", { timeout: 5000 });
+    check(
+        "filtered card: hidden group is dropped",
+        (await page.locator("#card5 .group").count()) === 2,
+        `${await page.locator("#card5 .group").count()} blocks`
+    );
+    const filteredGroupNodes = await page.locator("#card5 .group .node").count();
+    check(
+        "filtered card: excluded node removed from group",
+        filteredGroupNodes === 3,
+        `${filteredGroupNodes} nodes`
+    );
+    check(
+        "filtered card: no excluded node anywhere",
+        (await page.locator("#card5 .node", { hasText: "telaga-1-out" }).count()) ===
+            0,
+        "telaga-1-out still visible"
+    );
+    const filteredStandalone = await page
+        .locator("#card5 .group", { hasText: "Outbound" })
+        .locator(".node-name")
+        .allTextContents();
+    check(
+        "filtered card: standalone keeps only EU-out",
+        filteredStandalone.length === 1 && filteredStandalone[0] === "EU-out",
+        filteredStandalone.join(", ")
+    );
+
+    // -- sixth card: show_test_all: false hides the batch button -------------
+    await page.evaluate(() => window.__addCard6());
+    await page.waitForSelector("#card6 .node", { timeout: 5000 });
+    check(
+        "show_test_all: false hides batch button",
+        (await page.locator("#card6 .test-all-btn").count()) === 0
+    );
+
+    // -- visual editor is registered -----------------------------------------
+    check(
+        "editor element registered",
+        await page.evaluate(
+            () =>
+                typeof customElements.get("singbox-panel-card-editor") ===
+                "function"
+        )
+    );
+    check(
+        "getConfigElement returns an editor",
+        await page.evaluate(() => {
+            const Card = customElements.get("singbox-panel-card");
+            const el = Card.getConfigElement();
+            return el instanceof customElements.get("singbox-panel-card-editor");
+        })
+    );
+
     await page.screenshot({ path: "tests/stand.png", fullPage: true });
     console.log("  screenshot: tests/stand.png");
 } finally {

@@ -1,7 +1,8 @@
 import { LitElement, html } from "lit";
 import { cardStyles } from "./singbox-panel-card-style.js";
+import "./singbox-panel-card-editor.js";
 
-const CARD_VERSION = "0.1.10";
+const CARD_VERSION = "0.1.11";
 
 // unique_id formats used by the ha-singbox integration:
 //   select: "{entry_id}_group_{group_tag}"
@@ -23,6 +24,7 @@ class SingBoxPanelCard extends LitElement {
         _message: { state: true },
         _model: { state: true },
         _testing: { state: true }, // { [groupTag]: true }
+        _testingAll: { state: true }, // batch url-test in progress
     };
 
     static styles = cardStyles;
@@ -36,18 +38,41 @@ class SingBoxPanelCard extends LitElement {
         this._message = "";
         this._model = null;
         this._testing = {};
+        this._testingAll = false;
         this._fallbackNote = null;
     }
 
     static getStubConfig() {
-        return { title: DEFAULT_TITLE };
+        return {
+            title: DEFAULT_TITLE,
+            show_test_all: true,
+            exclude_outbounds: [],
+        };
+    }
+
+    static getConfigElement() {
+        return document.createElement("singbox-panel-card-editor");
     }
 
     setConfig(config) {
         if (!config || typeof config !== "object") {
             throw new Error("Invalid configuration");
         }
-        const next = { title: DEFAULT_TITLE, ...config };
+        const next = {
+            title: DEFAULT_TITLE,
+            show_test_all: true,
+            exclude_outbounds: [],
+            ...config,
+        };
+        // exclude_outbounds accepts a comma-separated string in YAML and an
+        // array from the editor; normalize to a trimmed string array.
+        next.exclude_outbounds = (Array.isArray(next.exclude_outbounds)
+            ? next.exclude_outbounds
+            : String(next.exclude_outbounds ?? "")
+                  .split(",")
+        )
+            .map((t) => String(t).trim())
+            .filter(Boolean);
         // Changing the pin (device/entity) re-runs discovery.
         if (
             next.device_id !== this._config.device_id ||
@@ -197,6 +222,7 @@ class SingBoxPanelCard extends LitElement {
     }
 
     _buildModel(registryEntries) {
+        const excluded = new Set(this._config.exclude_outbounds || []);
         const pings = {}; // proxy tag -> ping sensor entity_id
         for (const e of registryEntries) {
             if (
@@ -231,20 +257,25 @@ class SingBoxPanelCard extends LitElement {
                     ? state.attributes.options
                     : [];
             options.forEach((tag) => inGroups.add(tag));
+            const visible = options
+                .filter((tag) => !excluded.has(tag))
+                .map((tag) => ({
+                    tag,
+                    pingEntity: pings[tag] || null,
+                }));
+            // A group whose every outbound is excluded is hidden entirely.
+            if (visible.length === 0) continue;
             groups.push({
                 tag: groupTag,
                 entityId: e.entity_id,
-                options: options.map((tag) => ({
-                    tag,
-                    pingEntity: pings[tag] || null,
-                })),
+                options: visible,
             });
         }
 
         // Standalone outbounds (VPN interfaces, direct links, ...) are proxies
         // with a ping sensor that belong to no group.
         const standalone = Object.keys(pings)
-            .filter((tag) => !inGroups.has(tag))
+            .filter((tag) => !inGroups.has(tag) && !excluded.has(tag))
             .sort()
             .map((tag) => ({ tag, pingEntity: pings[tag] }));
 
@@ -446,6 +477,44 @@ class SingBoxPanelCard extends LitElement {
         }
     }
 
+    // One tap re-runs the url-test of every visible group and standalone
+    // outbound. Errors on individual outbounds don't abort the batch.
+    async _testAll() {
+        if (!this._hass || !this._model || this._testingAll) return;
+        this._testingAll = true;
+        const targets = [
+            ...this._model.groups.map((g) => ({
+                tag: g.tag,
+                target: g.entityId,
+            })),
+            ...this._model.standalone.map((p) => ({
+                tag: p.tag,
+                target: p.pingEntity,
+            })),
+        ];
+        try {
+            await Promise.all(
+                targets.map((t) =>
+                    this._callService(
+                        "singbox",
+                        "url_test",
+                        { outbound_tag: t.tag },
+                        t.target
+                    ).catch((err) => {
+                        console.error(
+                            `singbox-panel: url_test failed for ${t.tag}`,
+                            err
+                        );
+                    })
+                )
+            );
+        } finally {
+            setTimeout(() => {
+                this._testingAll = false;
+            }, 4000);
+        }
+    }
+
     // -- render -------------------------------------------------------------
 
     render() {
@@ -470,6 +539,9 @@ class SingBoxPanelCard extends LitElement {
         const m = this._model;
         const version = this._stateValue(m.version);
         const mode = this._stateValue(m.clashMode);
+        const showTestAll =
+            this._config.show_test_all !== false &&
+            (m.groups.length > 0 || m.standalone.length > 0);
         return html`
             <div class="card">
                 <div class="header">
@@ -478,6 +550,18 @@ class SingBoxPanelCard extends LitElement {
                         ${version ? html`<span>${version}</span>` : ""}
                         ${mode ? html`<span> · ${mode}</span>` : ""}
                     </div>
+                    ${showTestAll
+                        ? html`
+                              <button
+                                  class="test-all-btn"
+                                  ?disabled=${this._testingAll}
+                                  @click=${() => this._testAll()}
+                              >
+                                  <ha-icon icon="mdi:flash-outline"></ha-icon>
+                                  ${this._testingAll ? "Тест…" : "Проверить все"}
+                              </button>
+                          `
+                        : ""}
                 </div>
 
                 <div class="speeds">

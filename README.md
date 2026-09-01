@@ -17,6 +17,7 @@ traffic totals, per-proxy pings and one-click proxy switching.
   green ≤ 100 ms, amber ≤ 300 ms, red above).
 - **One-click switching** — tap a chip to select that proxy in its group.
 - **URL test button** — re-run the group's url-test from the card.
+- **«Проверить все»** — one tap re-tests every group and standalone outbound.
 - **Zero configuration** — the card discovers the sing-box entities
   automatically via the entity registry. No entity IDs to type.
 
@@ -41,11 +42,17 @@ JavaScript Module).
 
 ## Usage
 
-Add a manual card with type `custom:singbox-panel-card`:
+Add the card from the card picker (visual editor available) or manually with
+type `custom:singbox-panel-card`:
 
 ```yaml
 type: custom:singbox-panel-card
 title: Sing-box          # optional, default "Sing-box"
+show_test_all: true      # optional: show the «Проверить все» batch-test
+                         # button in the header (default true)
+exclude_outbounds:       # optional: outbound tags hidden from groups and
+  - telaga-urltest-out   # the Outbound block; a group whose every outbound
+  - main-out             # is excluded is hidden entirely
 # device_id: 4df21e9e7ffc2b82acdefad2eaf6ce6e   # optional: pin to the sing-box
 #                                               # device (from its HA device
 #                                               # page URL) when several

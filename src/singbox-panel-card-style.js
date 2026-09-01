@@ -33,6 +33,35 @@ export const cardStyles = css`
         white-space: nowrap;
         overflow: hidden;
         text-overflow: ellipsis;
+        flex: 1;
+        min-width: 0;
+    }
+    .header .test-all-btn {
+        flex: none;
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        border: none;
+        border-radius: 8px;
+        padding: 5px 10px;
+        font-size: 12px;
+        font-weight: 500;
+        cursor: pointer;
+        color: var(--primary-text-color);
+        background: var(--secondary-background-color, rgba(0, 0, 0, 0.05));
+        transition: background 0.15s ease, opacity 0.15s ease;
+    }
+    .header .test-all-btn:hover {
+        background: var(--primary-color);
+        color: var(--text-primary-color, #fff);
+    }
+    .header .test-all-btn[disabled] {
+        opacity: 0.5;
+        cursor: default;
+        pointer-events: none;
+    }
+    .header .test-all-btn ha-icon {
+        --mdc-icon-size: 14px;
     }
 
     /* ---------- speed tiles ---------- */

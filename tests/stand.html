@@ -142,6 +142,8 @@
     <div id="card2"></div>
     <div id="card3"></div>
     <div id="card4"></div>
+    <div id="card5"></div>
+    <div id="card6"></div>
 
     <script type="module">
         import "../singbox-panel-card.js";
@@ -186,6 +188,35 @@
             card4.setConfig({ title: "Foreign", device_id: "other" });
             document.getElementById("card4").appendChild(card4);
             card4.hass = window.__fakeHass;
+        };
+        // fifth card: excluded outbounds must disappear from groups and from
+        // the standalone block; an all-excluded group is hidden entirely
+        window.__addCard5 = () => {
+            window.__registryDeviceId = "dev1";
+            window.__foreignRegistry = null;
+            const card5 = document.createElement("singbox-panel-card");
+            card5.setConfig({
+                title: "Filtered",
+                exclude_outbounds: [
+                    "telaga-1-out",
+                    "main-out",
+                    "Ru-1-out",
+                    "Ru-2-out",
+                    "Ru-3-out",
+                    "Ru-urltest-out",
+                ],
+            });
+            document.getElementById("card5").appendChild(card5);
+            card5.hass = window.__fakeHass;
+        };
+        // sixth card: the "Проверить все" button must be hidden
+        window.__addCard6 = () => {
+            window.__registryDeviceId = "dev1";
+            window.__foreignRegistry = null;
+            const card6 = document.createElement("singbox-panel-card");
+            card6.setConfig({ title: "NoAll", show_test_all: false });
+            document.getElementById("card6").appendChild(card6);
+            card6.hass = window.__fakeHass;
         };
     </script>
 </body>
