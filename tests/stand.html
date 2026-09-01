@@ -104,13 +104,9 @@
             const card = document.querySelector("singbox-panel-card");
             if (card) card.hass = window.__fakeHass;
         };
-        // device_id assigned to every registry entry; the stand switches it to
-        // null to emulate a HA where sing-box entities are not linked to the
-        // device at all (the user's hard case)
-        window.__registryDeviceId = "dev1";
-        // optional replacement registry (a "foreign" device with non-singbox
-        // entities) used by the card4 scenario
-        window.__foreignRegistry = null;
+        // Emulates the strict service schema of integration v0.3.8: any call
+        // carrying entity_id is rejected (the card must retry without it).
+        window.__failOnEntityId = false;
         window.__fakeHass = {
             states,
             async callWS(msg) {
@@ -126,9 +122,19 @@
                 throw new Error(`unknown WS call: ${msg.type}`);
             },
             async callService(domain, service, data) {
+                if (window.__failOnEntityId && data && data.entity_id) {
+                    throw new Error("extra keys not allowed @ data['entity_id']");
+                }
                 window.__calls.push({ domain, service, data });
             },
         };
+        // device_id assigned to every registry entry; the stand switches it to
+        // null to emulate a HA where sing-box entities are not linked to the
+        // device at all (the user's hard case)
+        window.__registryDeviceId = "dev1";
+        // optional replacement registry (a "foreign" device with non-singbox
+        // entities) used by the card4 scenario
+        window.__foreignRegistry = null;
     </script>
 </head>
 <body>

@@ -1,7 +1,7 @@
 import { LitElement, html } from "lit";
 import { cardStyles } from "./singbox-panel-card-style.js";
 
-const CARD_VERSION = "0.1.8";
+const CARD_VERSION = "0.1.9";
 
 // unique_id formats used by the ha-singbox integration:
 //   select: "{entry_id}_group_{group_tag}"
@@ -357,17 +357,36 @@ class SingBoxPanelCard extends LitElement {
 
     // -- actions ------------------------------------------------------------
 
-    // The integration registers these as entity services, so HA requires a
-    // target; pass the most relevant sing-box entity (group select / ping
-    // sensor) — the service itself resolves the config entry from it.
+    // The integration went through three service schemas: entity services
+    // (v0.3.7, target required), a strict schema (v0.3.8, extra keys banned)
+    // and ALLOW_EXTRA (v0.3.9). Send the target entity and retry without it
+    // when the schema rejects the extra key — works with every version.
+    async _callService(domain, service, data, target) {
+        try {
+            await this._hass.callService(
+                domain,
+                service,
+                target ? { ...data, entity_id: target } : data
+            );
+        } catch (err) {
+            const msg = String(err && err.message ? err.message : err);
+            if (target && /extra keys not allowed/.test(msg)) {
+                await this._hass.callService(domain, service, data);
+                return;
+            }
+            throw err;
+        }
+    }
+
     async _selectNode(groupTag, nodeTag, target) {
         if (!this._hass) return;
         try {
-            await this._hass.callService("singbox", "select_outbound", {
-                group_tag: groupTag,
-                outbound_tag: nodeTag,
-                entity_id: target,
-            });
+            await this._callService(
+                "singbox",
+                "select_outbound",
+                { group_tag: groupTag, outbound_tag: nodeTag },
+                target
+            );
         } catch (err) {
             console.error("singbox-panel: select_outbound failed", err);
         }
@@ -377,10 +396,12 @@ class SingBoxPanelCard extends LitElement {
         if (!this._hass || this._testing[groupTag]) return;
         this._testing = { ...this._testing, [groupTag]: true };
         try {
-            await this._hass.callService("singbox", "url_test", {
-                outbound_tag: groupTag,
-                entity_id: target,
-            });
+            await this._callService(
+                "singbox",
+                "url_test",
+                { outbound_tag: groupTag },
+                target
+            );
         } catch (err) {
             console.error("singbox-panel: url_test failed", err);
         } finally {
@@ -394,10 +415,12 @@ class SingBoxPanelCard extends LitElement {
         if (!this._hass || this._testing[nodeTag]) return;
         this._testing = { ...this._testing, [nodeTag]: true };
         try {
-            await this._hass.callService("singbox", "url_test", {
-                outbound_tag: nodeTag,
-                entity_id: target,
-            });
+            await this._callService(
+                "singbox",
+                "url_test",
+                { outbound_tag: nodeTag },
+                target
+            );
         } catch (err) {
             console.error("singbox-panel: url_test failed", err);
         } finally {

@@ -195,6 +195,31 @@ try {
     );
     check("test button disabled while running", await firstTestBtn.isDisabled());
 
+    // -- strict schema (integration v0.3.8): retry without entity_id --------
+    await page.evaluate(() => {
+        window.__failOnEntityId = true;
+    });
+    await page
+        .locator(".node", { hasText: "telaga-1-out" })
+        .locator(".node-select")
+        .click();
+    await page.waitForTimeout(150);
+    calls = await page.evaluate(() => window.__calls);
+    check(
+        "retry without entity_id on strict schema",
+        calls.some(
+            (c) =>
+                c.service === "select_outbound" &&
+                c.data.group_tag === "telaga-out" &&
+                c.data.outbound_tag === "telaga-1-out" &&
+                !("entity_id" in c.data)
+        ),
+        JSON.stringify(calls.slice(-2))
+    );
+    await page.evaluate(() => {
+        window.__failOnEntityId = false;
+    });
+
     // -- second card pinned via device_id ------------------------------------
     await page.evaluate(() => window.__addCard2());
     await page.waitForSelector("#card2 .node", { timeout: 5000 });

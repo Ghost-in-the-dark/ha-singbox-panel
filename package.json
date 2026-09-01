@@ -1,6 +1,6 @@
 {
   "name": "ha-singbox-panel",
-  "version": "0.1.8",
+  "version": "0.1.9",
   "description": "Lovelace card: a beautiful panel for the sing-box integration",
   "type": "module",
   "scripts": {
