@@ -1,7 +1,7 @@
 import { LitElement, html } from "lit";
 import { cardStyles } from "./singbox-panel-card-style.js";
 
-const CARD_VERSION = "0.1.9";
+const CARD_VERSION = "0.1.10";
 
 // unique_id formats used by the ha-singbox integration:
 //   select: "{entry_id}_group_{group_tag}"
@@ -324,15 +324,31 @@ class SingBoxPanelCard extends LitElement {
         if (!Number.isFinite(value)) {
             return "—";
         }
+        // HA converts DATA_SIZE sensors (memory, totals) to their suggested
+        // unit, so the state may arrive in KiB/MiB/GiB (or kB/MB/GB) — never
+        // treat it as raw bytes.
+        const unit = (state.attributes && state.attributes.unit_of_measurement) || "B";
+        const toBytes = {
+            B: 1,
+            kB: 1e3,
+            MB: 1e6,
+            GB: 1e9,
+            TB: 1e12,
+            KiB: 1024,
+            MiB: 1024 ** 2,
+            GiB: 1024 ** 3,
+            TiB: 1024 ** 4,
+        };
+        const bytes = value * (toBytes[unit] || 1);
         const units = ["B", "KiB", "MiB", "GiB", "TiB"];
-        let scaled = value;
-        let unit = 0;
-        while (scaled >= 1024 && unit < units.length - 1) {
+        let scaled = bytes;
+        let idx = 0;
+        while (scaled >= 1024 && idx < units.length - 1) {
             scaled /= 1024;
-            unit += 1;
+            idx += 1;
         }
-        const digits = unit ? 1 : 0;
-        return `${scaled.toLocaleString(undefined, { maximumFractionDigits: digits })} ${units[unit]}`;
+        const digits = idx ? 1 : 0;
+        return `${scaled.toLocaleString(undefined, { maximumFractionDigits: digits })} ${units[idx]}`;
     }
 
     _ping(option) {

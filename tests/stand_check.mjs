@@ -49,7 +49,10 @@ try {
     const totals = await page.locator(".chip-stat b").allTextContents();
     check(
         "totals formatted",
-        totals.length === 4 && totals[0].includes("MiB") && totals[1].includes("MiB"),
+        totals.length === 4 &&
+            totals[0] === "19.6 MiB" &&
+            totals[1] === "962.6 MiB" &&
+            totals[2] === "29.9 MiB",
         totals.join(" | ")
     );
 
