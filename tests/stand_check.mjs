@@ -117,7 +117,8 @@ try {
             (c) =>
                 c.service === "select_outbound" &&
                 c.data.group_tag === "telaga-out" &&
-                c.data.outbound_tag === "telaga-1-out"
+                c.data.outbound_tag === "telaga-1-out" &&
+                c.data.entity_id === "select.telaga_out"
         ),
         JSON.stringify(calls)
     );
@@ -132,7 +133,10 @@ try {
     check(
         "node ping button -> url_test",
         calls.some(
-            (c) => c.service === "url_test" && c.data.outbound_tag === "telaga-1-out"
+            (c) =>
+                c.service === "url_test" &&
+                c.data.outbound_tag === "telaga-1-out" &&
+                c.data.entity_id === "sensor.telaga_1_out_ping"
         ),
         JSON.stringify(calls)
     );
@@ -147,7 +151,12 @@ try {
     calls = await page.evaluate(() => window.__calls);
     check(
         "standalone ping button -> url_test",
-        calls.some((c) => c.service === "url_test" && c.data.outbound_tag === "EU-out"),
+        calls.some(
+            (c) =>
+                c.service === "url_test" &&
+                c.data.outbound_tag === "EU-out" &&
+                c.data.entity_id === "sensor.eu_out_ping"
+        ),
         JSON.stringify(calls)
     );
 
@@ -157,7 +166,12 @@ try {
     calls = await page.evaluate(() => window.__calls);
     check(
         "click test -> url_test",
-        calls.some((c) => c.service === "url_test" && c.data.outbound_tag === "telaga-out"),
+        calls.some(
+            (c) =>
+                c.service === "url_test" &&
+                c.data.outbound_tag === "telaga-out" &&
+                c.data.entity_id === "select.telaga_out"
+        ),
         JSON.stringify(calls)
     );
     check("test button disabled while running", await firstTestBtn.isDisabled());

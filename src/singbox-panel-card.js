@@ -1,7 +1,7 @@
 import { LitElement, html } from "lit";
 import { cardStyles } from "./singbox-panel-card-style.js";
 
-const CARD_VERSION = "0.1.6";
+const CARD_VERSION = "0.1.7";
 
 // unique_id formats used by the ha-singbox integration:
 //   select: "{entry_id}_group_{group_tag}"
@@ -350,24 +350,29 @@ class SingBoxPanelCard extends LitElement {
 
     // -- actions ------------------------------------------------------------
 
-    async _selectNode(groupTag, nodeTag) {
+    // The integration registers these as entity services, so HA requires a
+    // target; pass the most relevant sing-box entity (group select / ping
+    // sensor) — the service itself resolves the config entry from it.
+    async _selectNode(groupTag, nodeTag, target) {
         if (!this._hass) return;
         try {
             await this._hass.callService("singbox", "select_outbound", {
                 group_tag: groupTag,
                 outbound_tag: nodeTag,
+                entity_id: target,
             });
         } catch (err) {
             console.error("singbox-panel: select_outbound failed", err);
         }
     }
 
-    async _testGroup(groupTag) {
+    async _testGroup(groupTag, target) {
         if (!this._hass || this._testing[groupTag]) return;
         this._testing = { ...this._testing, [groupTag]: true };
         try {
             await this._hass.callService("singbox", "url_test", {
                 outbound_tag: groupTag,
+                entity_id: target,
             });
         } catch (err) {
             console.error("singbox-panel: url_test failed", err);
@@ -378,12 +383,13 @@ class SingBoxPanelCard extends LitElement {
         }
     }
 
-    async _pingNode(nodeTag) {
+    async _pingNode(nodeTag, target) {
         if (!this._hass || this._testing[nodeTag]) return;
         this._testing = { ...this._testing, [nodeTag]: true };
         try {
             await this._hass.callService("singbox", "url_test", {
                 outbound_tag: nodeTag,
+                entity_id: target,
             });
         } catch (err) {
             console.error("singbox-panel: url_test failed", err);
@@ -479,7 +485,7 @@ class SingBoxPanelCard extends LitElement {
                     class="node-ping"
                     title="Проверить пинг ${proxy.tag}"
                     ?disabled=${pinging}
-                    @click=${() => this._pingNode(proxy.tag)}
+                    @click=${() => this._pingNode(proxy.tag, proxy.pingEntity)}
                 >
                     <ha-icon icon="mdi:radar"></ha-icon>
                 </button>
@@ -524,7 +530,7 @@ class SingBoxPanelCard extends LitElement {
                     <button
                         class="test-btn"
                         ?disabled=${testing}
-                        @click=${() => this._testGroup(group.tag)}
+                        @click=${() => this._testGroup(group.tag, group.entityId)}
                     >
                         <ha-icon icon="mdi:flash-outline"></ha-icon>
                         ${testing ? "Тест…" : "Тест"}
@@ -548,7 +554,7 @@ class SingBoxPanelCard extends LitElement {
                 <button
                     class="node-select"
                     title="Выбрать ${option.tag}"
-                    @click=${() => this._selectNode(group.tag, option.tag)}
+                    @click=${() => this._selectNode(group.tag, option.tag, group.entityId)}
                 >
                     <span class="node-name">${option.tag}</span>
                     ${ms !== null
@@ -559,7 +565,7 @@ class SingBoxPanelCard extends LitElement {
                     class="node-ping"
                     title="Проверить пинг ${option.tag}"
                     ?disabled=${pinging}
-                    @click=${() => this._pingNode(option.tag)}
+                    @click=${() => this._pingNode(option.tag, option.pingEntity || group.entityId)}
                 >
                     <ha-icon icon="mdi:radar"></ha-icon>
                 </button>
