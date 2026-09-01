@@ -101,7 +101,11 @@
             states,
             async callWS(msg) {
                 if (msg.type === "config_entries/get") {
-                    return [{ domain: "singbox", entry_id: entryId, title: "sing-box" }];
+                    // two sing-box entries: entities belong to the second one
+                    return [
+                        { domain: "singbox", entry_id: "old123", title: "sing-box (old)" },
+                        { domain: "singbox", entry_id: entryId, title: "sing-box" },
+                    ];
                 }
                 if (msg.type === "config/entity_registry/list") {
                     return registry;

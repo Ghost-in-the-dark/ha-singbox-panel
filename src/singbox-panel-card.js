@@ -1,7 +1,7 @@
 import { LitElement, html } from "lit";
 import { cardStyles } from "./singbox-panel-card-style.js";
 
-const CARD_VERSION = "0.1.0";
+const CARD_VERSION = "0.1.1";
 
 // unique_id formats used by the ha-singbox integration:
 //   select: "{entry_id}_group_{group_tag}"
@@ -70,27 +70,37 @@ class SingBoxPanelCard extends LitElement {
                     "Интеграция sing-box не найдена. Установите и настройте ha-singbox.";
                 return;
             }
-            let entryId = singboxEntries[0].entry_id;
             const registry = await this._hass.callWS({
                 type: "config/entity_registry/list",
             });
-            // An explicit entity in the config pins the card to its entry.
+            // Collect entities from every sing-box entry; an explicit entity
+            // in the config pins the card to its entry.
+            let entryIds = singboxEntries.map((e) => e.entry_id);
             if (this._config.entity) {
                 const pinned = registry.find(
                     (e) => e.entity_id === this._config.entity
                 );
                 if (pinned && pinned.config_entry_id) {
-                    entryId = pinned.config_entry_id;
+                    entryIds = [pinned.config_entry_id];
                 }
             }
+            const idSet = new Set(entryIds);
             const mine = registry.filter(
-                (e) => e.config_entry_id === entryId
+                (e) => e.config_entry_id && idSet.has(e.config_entry_id)
             );
             this._model = this._buildModel(mine);
             if (this._model.groups.length === 0) {
+                const selects = mine.filter((e) => e.domain === "select");
+                const sensors = mine.filter((e) => e.domain === "sensor");
+                const sample = selects
+                    .slice(0, 5)
+                    .map((e) => `${e.entity_id} [${e.unique_id}]`)
+                    .join(", ");
                 this._state = "error";
                 this._message =
-                    "Группы прокси не найдены. Проверьте, что в конфигурации sing-box есть selector-группы.";
+                    selects.length === 0
+                        ? `Группы прокси не найдены: у записи sing-box нет select-сущностей (sensor: ${sensors.length}). Перезагрузите интеграцию в HACS и перезапустите HA.`
+                        : `Группы прокси не найдены: ${selects.length} select-сущностей с неожиданным форматом unique_id (${sample}). Обновите ha-singbox и перезапустите HA.`;
                 return;
             }
             this._state = "ready";
