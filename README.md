@@ -18,6 +18,10 @@ traffic totals, per-proxy pings and one-click proxy switching.
 - **One-click switching** — tap a chip to select that proxy in its group.
 - **URL test button** — re-run the group's url-test from the card.
 - **«Проверить все»** — one tap re-tests every group and standalone outbound.
+- **Update interval** — optional render throttle (1–60 s); with the default
+  `0` the card stays fully live. Outbound switching is never delayed by it.
+- **RU / EN interface** — follows the Home Assistant UI language by default;
+  can be overridden per card with `language: ru` / `language: en`.
 - **Zero configuration** — the card discovers the sing-box entities
   automatically via the entity registry. No entity IDs to type.
 
@@ -47,12 +51,20 @@ type `custom:singbox-panel-card`:
 
 ```yaml
 type: custom:singbox-panel-card
-title: Sing-box          # optional, default "Sing-box"
-show_test_all: true      # optional: show the «Проверить все» batch-test
-                         # button in the header (default true)
-exclude_outbounds:       # optional: outbound tags hidden from groups and
-  - telaga-urltest-out   # the Outbound block; a group whose every outbound
-  - main-out             # is excluded is hidden entirely
+title: Sing-box            # optional, default "Sing-box"
+language: auto             # optional: "auto" (follow Home Assistant UI,
+                           # default), "ru" or "en"
+update_interval: 0         # optional: refresh rate of the values on the card,
+                           # in seconds. 0 = live (re-render on every HA state
+                           # change, default). Larger values (1, 2, 3, 5, 10,
+                           # 30, 60) throttle re-renders to at most every N
+                           # seconds on busy instances. Outbound selection and
+                           # the test buttons always apply instantly.
+show_test_all: true        # optional: show the «Проверить все» batch-test
+                           # button in the header (default true)
+exclude_outbounds:         # optional: outbound tags hidden from groups and
+  - telaga-urltest-out     # the Outbound block; a group whose every outbound
+  - main-out               # is excluded is hidden entirely
 # device_id: 4df21e9e7ffc2b82acdefad2eaf6ce6e   # optional: pin to the sing-box
 #                                               # device (from its HA device
 #                                               # page URL) when several
@@ -62,7 +74,9 @@ exclude_outbounds:       # optional: outbound tags hidden from groups and
 ```
 
 No other configuration is needed — groups, pings, speeds and totals are
-discovered from the ha-singbox integration automatically.
+discovered from the ha-singbox integration automatically. When you edit the
+config (YAML or the visual editor), exclusion changes apply immediately —
+no dashboard reload required.
 
 ### Requirements
 

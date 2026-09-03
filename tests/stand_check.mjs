@@ -343,6 +343,87 @@ try {
         (await page.locator("#card6 .test-all-btn").count()) === 0
     );
 
+    // -- seventh card: English UI + update_interval render throttle ----------
+    await page.evaluate(() => window.__addCard7());
+    await page.waitForSelector("#card7 .node", { timeout: 5000 });
+    const enLabels = await page.locator("#card7 .tile-label").allTextContents();
+    check(
+        "en locale: speed labels",
+        enLabels.length === 2 &&
+            enLabels[0] === "Upload" &&
+            enLabels[1] === "Download",
+        enLabels.join(" | ")
+    );
+    const enTestAll = await page.locator("#card7 .test-all-btn").textContent();
+    check("en locale: test-all label", enTestAll.includes("Test all"), enTestAll);
+    const c7Up = page.locator("#card7 .tile-value").nth(0);
+    check("throttle: initial value shown", (await c7Up.textContent()).includes("1,641"));
+
+    // A pushed state change must NOT re-render immediately (interval 60 s)...
+    await page.evaluate(() =>
+        window.__pushStateFor("card7", "sensor.singbox_uplink", "7777")
+    );
+    await page.waitForTimeout(400);
+    check(
+        "throttle: pushed value held until interval",
+        (await c7Up.textContent()).includes("1,641"),
+        await c7Up.textContent()
+    );
+
+    // ...but selecting an outbound forces an immediate refresh: the switch is
+    // visible at once and the throttled values follow in the same render.
+    await page
+        .locator("#card7 .node", { hasText: "telaga-1-out" })
+        .locator(".node-select")
+        .click();
+    await page.waitForTimeout(250);
+    const c7Active = await page
+        .locator("#card7 .node.active .node-name")
+        .allTextContents();
+    check(
+        "outbound switch updates instantly",
+        c7Active.includes("telaga-1-out"),
+        c7Active.join(", ")
+    );
+    check(
+        "instant refresh flushes throttled values",
+        (await c7Up.textContent()).includes("7,777"),
+        await c7Up.textContent()
+    );
+
+    // -- eighth card: exclusion edits on a running card apply immediately ----
+    await page.evaluate(() => window.__addCard8());
+    await page.waitForSelector("#card8 .node", { timeout: 5000 });
+    check(
+        "reconfig card: telaga-1-out hidden initially",
+        (await page.locator("#card8 .node", { hasText: "telaga-1-out" }).count()) ===
+            0,
+        "telaga-1-out still visible"
+    );
+    check(
+        "reconfig card: telaga-2-out visible initially",
+        (await page.locator("#card8 .node", { hasText: "telaga-2-out" }).count()) ===
+            1,
+        "telaga-2-out missing"
+    );
+
+    // Change the exclusion list on the running card: the model must rebuild
+    // without a dashboard reload (the bug being fixed).
+    await page.evaluate(() => window.__reconfigCard8(["telaga-2-out"]));
+    await page.waitForTimeout(300);
+    check(
+        "exclusion edit: newly excluded node hidden",
+        (await page.locator("#card8 .node", { hasText: "telaga-2-out" }).count()) ===
+            0,
+        "telaga-2-out still visible"
+    );
+    check(
+        "exclusion edit: previously excluded node restored",
+        (await page.locator("#card8 .node", { hasText: "telaga-1-out" }).count()) ===
+            1,
+        "telaga-1-out still hidden"
+    );
+
     // -- visual editor is registered -----------------------------------------
     check(
         "editor element registered",

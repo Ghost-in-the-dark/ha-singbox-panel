@@ -1,8 +1,9 @@
 import { LitElement, html } from "lit";
 import { cardStyles } from "./singbox-panel-card-style.js";
+import { resolveLanguage, translate } from "./singbox-panel-i18n.js";
 import "./singbox-panel-card-editor.js";
 
-const CARD_VERSION = "0.1.12";
+const CARD_VERSION = "0.1.13";
 
 // unique_id formats used by the ha-singbox integration:
 //   select: "{entry_id}_group_{group_tag}"
@@ -14,17 +15,20 @@ const CLASH_MODE_SUFFIX = "_clash_mode";
 // Synthetic clash-API group present in /proxies but with no backing outbound
 // (url-test on it always fails with 404) — never surfaced by the card.
 const SYNTHETIC_GLOBAL = "GLOBAL";
+// How long an optimistic outbound selection is shown before the card falls
+// back to the entity state when the integration never confirms the change.
+const PENDING_SELECT_TTL_MS = 10000;
 
 const DEFAULT_TITLE = "Sing-box";
 
 class SingBoxPanelCard extends LitElement {
+    // _hass is intentionally NOT a reactive property: HA hands us a fresh
+    // hass object on every state change and we decide when to re-render
+    // ourselves (see _scheduleRender), so the configurable update interval
+    // actually throttles the work. Lit would otherwise re-render on its own
+    // whenever the hass object identity changes.
     static properties = {
-        // _hass must be reactive: HA pushes a new hass object on every state
-        // change and without a re-render the card would show stale values
-        // until the user interacts with it.
-        _hass: { state: true },
         _state: { state: true }, // "loading" | "error" | "ready"
-        _message: { state: true },
         _model: { state: true },
         _testing: { state: true }, // { [groupTag]: true }
         _testingAll: { state: true }, // batch url-test in progress
@@ -38,11 +42,16 @@ class SingBoxPanelCard extends LitElement {
         this._config = {};
         this._discovered = false;
         this._state = "loading";
-        this._message = "";
         this._model = null;
         this._testing = {};
         this._testingAll = false;
-        this._fallbackNote = null;
+        this._fallbackNote = null; // { key, params }
+        this._error = null; // { key, params }
+        // Rendering throttle state (update_interval > 0).
+        this._lastRenderAt = 0;
+        this._renderTimer = null;
+        // Optimistic outbound selections: entity_id -> { tag, ts }.
+        this._pendingSelections = {};
     }
 
     static getStubConfig() {
@@ -50,6 +59,8 @@ class SingBoxPanelCard extends LitElement {
             title: DEFAULT_TITLE,
             show_test_all: true,
             exclude_outbounds: [],
+            update_interval: 0,
+            language: "auto",
         };
     }
 
@@ -61,10 +72,13 @@ class SingBoxPanelCard extends LitElement {
         if (!config || typeof config !== "object") {
             throw new Error("Invalid configuration");
         }
+        const prev = this._config || {};
         const next = {
             title: DEFAULT_TITLE,
             show_test_all: true,
             exclude_outbounds: [],
+            update_interval: 0,
+            language: "auto",
             ...config,
         };
         // exclude_outbounds accepts a comma-separated string in YAML and an
@@ -76,18 +90,45 @@ class SingBoxPanelCard extends LitElement {
         )
             .map((t) => String(t).trim())
             .filter(Boolean);
-        // Changing the pin (device/entity) re-runs discovery.
-        if (
-            next.device_id !== this._config.device_id ||
-            next.entity !== this._config.entity
-        ) {
-            this._discovered = false;
-        }
+        // update_interval: seconds; 0 = live (render on every HA push).
+        const interval = Number(next.update_interval);
+        next.update_interval =
+            Number.isFinite(interval) && interval > 0
+                ? Math.min(interval, 3600)
+                : 0;
         this._config = next;
+
+        // A pin (device/entity) or an exclusion-list change alters which
+        // entities the card shows; the discovered model must be rebuilt.
+        // Exclusions previously only applied on the very first discovery,
+        // so editing the config did not hide the tags until a full reload.
+        if (this._discovered && this._needsRediscovery(prev, next)) {
+            this._discovered = false;
+            if (this._hass) this._discover();
+        }
+        // Config edits (visual editor / YAML) render right away; a re-render
+        // triggered by a later hass push would otherwise show stale values.
+        this.requestUpdate();
+    }
+
+    _needsRediscovery(prev, next) {
+        if (prev.device_id !== next.device_id || prev.entity !== next.entity) {
+            return true;
+        }
+        const prevList = prev.exclude_outbounds || [];
+        const nextList = next.exclude_outbounds || [];
+        return (
+            prevList.length !== nextList.length ||
+            nextList.some((tag) => !prevList.includes(tag))
+        );
     }
 
     getCardSize() {
         return 4;
+    }
+
+    get hass() {
+        return this._hass;
     }
 
     set hass(hass) {
@@ -96,9 +137,18 @@ class SingBoxPanelCard extends LitElement {
             this._discovered = true;
             this._discover();
         }
-        // Re-render on every hass push even when HA hands us the same object
-        // reference (Lit would otherwise skip the update).
-        if (hass) this.requestUpdate();
+        // Re-render on every hass push, gated by the configured interval.
+        if (hass) this._scheduleRender();
+    }
+
+    // -- localization --------------------------------------------------------
+
+    _lang() {
+        return resolveLanguage(this._config, this._hass);
+    }
+
+    _t(key, params = {}) {
+        return translate(this._lang(), key, params);
     }
 
     // -- discovery ----------------------------------------------------------
@@ -133,14 +183,23 @@ class SingBoxPanelCard extends LitElement {
                 if (markedGroups(byDevice).length > 0) {
                     entries = byDevice;
                 } else {
-                    this._fallbackNote = `device_id «${this._config.device_id}» не дал групп (записей реестра: ${byDevice.length}) — показаны все экземпляры sing-box.`;
+                    this._fallbackNote = {
+                        key: "fallback.device",
+                        params: {
+                            device: this._config.device_id,
+                            count: byDevice.length,
+                        },
+                    };
                 }
             } else if (this._config.entity) {
                 const pinned = registry.find(
                     (e) => e.entity_id === this._config.entity
                 );
                 if (!pinned) {
-                    this._fallbackNote = `entity «${this._config.entity}» не найдена в реестре — показаны все экземпляры sing-box.`;
+                    this._fallbackNote = {
+                        key: "fallback.entityNotFound",
+                        params: { entity: this._config.entity },
+                    };
                 } else {
                     const byPinned = registry.filter(
                         (e) =>
@@ -151,7 +210,10 @@ class SingBoxPanelCard extends LitElement {
                     if (markedGroups(byPinned).length > 0) {
                         entries = byPinned;
                     } else {
-                        this._fallbackNote = `entity «${this._config.entity}» не дала групп — показаны все экземпляры sing-box.`;
+                        this._fallbackNote = {
+                            key: "fallback.entityNoGroups",
+                            params: { entity: this._config.entity },
+                        };
                     }
                 }
             }
@@ -206,21 +268,49 @@ class SingBoxPanelCard extends LitElement {
                     .map((e) => `${e.entity_id} [${e.unique_id}]`)
                     .join(", ");
                 this._state = "error";
-                this._message =
-                    markedSelects.length === 0
-                        ? deviceCount !== null
-                            ? `Группы прокси не найдены: по device_id найдено записей реестра: ${deviceCount}, но сущностей ha-singbox среди них нет (select во всём реестре: ${allSelects.length}, ping-сенсоров: ${pingSensors.length}). Пример записей по device_id: ${pinSample}. Убедитесь, что установлена интеграция ha-singbox (Ghost-in-the-dark/ha-singbox) и она создала сущности, затем перезапустите HA.`
-                            : `Группы прокси не найдены: в реестре нет сущностей sing-box (всего select: ${allSelects.length}, ping-сенсоров: ${pingSensors.length}). Проверьте, что ha-singbox установлена и настроена, затем перезапустите HA.`
-                        : `Группы прокси не найдены: select-сущности есть, но с неожиданным форматом unique_id (${sample}). Обновите ha-singbox и перезапустите HA.`;
+                if (markedSelects.length === 0 && deviceCount !== null) {
+                    this._error = {
+                        key: "errors.groupsDevice",
+                        params: {
+                            count: deviceCount,
+                            selects: allSelects.length,
+                            pings: pingSensors.length,
+                            sample: pinSample,
+                        },
+                    };
+                } else if (markedSelects.length === 0) {
+                    this._error = {
+                        key: "errors.groupsNone",
+                        params: {
+                            selects: allSelects.length,
+                            pings: pingSensors.length,
+                        },
+                    };
+                } else {
+                    this._error = {
+                        key: "errors.groupsBadUid",
+                        params: { sample },
+                    };
+                }
                 return;
             }
             if (this._fallbackNote) {
-                console.warn(`singbox-panel: ${this._fallbackNote}`);
+                console.warn(
+                    `singbox-panel: ${this._t(
+                        this._fallbackNote.key,
+                        this._fallbackNote.params
+                    )}`
+                );
             }
             this._state = "ready";
         } catch (err) {
             this._state = "error";
-            this._message = `Не удалось загрузить данные: ${err && err.message ? err.message : err}`;
+            this._error = {
+                key: "errors.loadFailed",
+                params: {
+                    msg: err && err.message ? err.message : String(err),
+                },
+            };
         }
     }
 
@@ -406,6 +496,62 @@ class SingBoxPanelCard extends LitElement {
         return ms === null ? "—" : `${ms} ms`;
     }
 
+    // -- render throttle -----------------------------------------------------
+
+    // Seconds between value re-renders; 0 disables the throttle (live).
+    _refreshMs() {
+        const sec = Number(this._config.update_interval) || 0;
+        return Math.min(Math.max(sec, 0), 3600) * 1000;
+    }
+
+    // Called on every hass push. With update_interval = 0 the card renders on
+    // each push (previous behaviour). With an interval set, renders happen at
+    // most every N seconds; `force` (user interaction) bypasses the throttle.
+    _scheduleRender(force = false) {
+        if (!this._hass) return;
+        const interval = this._refreshMs();
+        if (interval <= 0 || force) {
+            this._requestRender();
+            return;
+        }
+        const now = Date.now();
+        const deadline = this._lastRenderAt + interval;
+        if (now >= deadline) {
+            this._requestRender();
+            return;
+        }
+        if (this._renderTimer) return; // a render is already pending
+        this._renderTimer = setTimeout(() => {
+            this._renderTimer = null;
+            this._requestRender();
+        }, deadline - now);
+    }
+
+    _requestRender() {
+        if (this._renderTimer) {
+            clearTimeout(this._renderTimer);
+            this._renderTimer = null;
+        }
+        this.requestUpdate();
+    }
+
+    // Selected outbound shown in the group header. Renders the optimistic
+    // selection (the tag the user tapped) until the real entity state catches
+    // up or the intent expires, so a switch is visible immediately even when
+    // the render throttle would otherwise delay the next refresh.
+    _groupCurrent(group) {
+        const state = this._entity(group.entityId);
+        const live =
+            state && state.state !== "unavailable" ? state.state : null;
+        const pending = this._pendingSelections[group.entityId];
+        if (!pending) return live;
+        if (pending.tag === live || Date.now() - pending.ts > PENDING_SELECT_TTL_MS) {
+            delete this._pendingSelections[group.entityId];
+            return live;
+        }
+        return pending.tag;
+    }
+
     // -- actions ------------------------------------------------------------
 
     // The integration went through three service schemas: entity services
@@ -430,7 +576,11 @@ class SingBoxPanelCard extends LitElement {
     }
 
     async _selectNode(groupTag, nodeTag, target) {
-        if (!this._hass) return;
+        if (!this._hass || !target) return;
+        // Show the switch right away; the header uses this until the select
+        // entity state confirms the new outbound (see _groupCurrent).
+        this._pendingSelections[target] = { tag: nodeTag, ts: Date.now() };
+        this._scheduleRender(true);
         try {
             await this._callService(
                 "singbox",
@@ -440,7 +590,11 @@ class SingBoxPanelCard extends LitElement {
             );
         } catch (err) {
             console.error("singbox-panel: select_outbound failed", err);
+            delete this._pendingSelections[target];
         }
+        // Flush again once the service round-trip finished — by then HA has
+        // usually pushed the new select state already.
+        this._scheduleRender(true);
     }
 
     async _testGroup(groupTag, target) {
@@ -522,10 +676,17 @@ class SingBoxPanelCard extends LitElement {
     // -- render -------------------------------------------------------------
 
     render() {
+        // A render is the moment the throttle measures against: every actual
+        // paint (loading/error/data) resets the next-refresh deadline.
+        this._lastRenderAt = Date.now();
+
         if (this._state === "error") {
+            const err = this._error || { key: "errors.loadFailed", params: {} };
             return html`
                 <div class="card">
-                    <div class="state-msg">${this._message}</div>
+                    <div class="state-msg">
+                        ${this._t(err.key, err.params)}
+                    </div>
                 </div>
             `;
         }
@@ -534,7 +695,7 @@ class SingBoxPanelCard extends LitElement {
                 <div class="card">
                     <div class="state-msg">
                         <div class="spinner"></div>
-                        <span>Загрузка данных sing-box…</span>
+                        <span>${this._t("loading")}</span>
                     </div>
                 </div>
             `;
@@ -562,15 +723,17 @@ class SingBoxPanelCard extends LitElement {
                                   @click=${() => this._testAll()}
                               >
                                   <ha-icon icon="mdi:flash-outline"></ha-icon>
-                                  ${this._testingAll ? "Тест…" : "Проверить все"}
+                                  ${this._testingAll
+                                      ? this._t("testing")
+                                      : this._t("testAll")}
                               </button>
                           `
                         : ""}
                 </div>
 
                 <div class="speeds">
-                    ${this._speedTile("up", "mdi:arrow-up-bold", "Загрузка", m.uplink)}
-                    ${this._speedTile("down", "mdi:arrow-down-bold", "Скачивание", m.downlink)}
+                    ${this._speedTile("up", "mdi:arrow-up-bold", this._t("speedUp"), m.uplink)}
+                    ${this._speedTile("down", "mdi:arrow-down-bold", this._t("speedDown"), m.downlink)}
                 </div>
 
                 <div class="totals">
@@ -586,7 +749,10 @@ class SingBoxPanelCard extends LitElement {
                     : ""}
 
                 ${this._fallbackNote
-                    ? html`<div class="fallback-note">${this._fallbackNote}</div>`
+                    ? html`<div class="fallback-note">${this._t(
+                          this._fallbackNote.key,
+                          this._fallbackNote.params
+                      )}</div>`
                     : ""}
                 <div class="footer">sing-box panel · v${CARD_VERSION}</div>
             </div>
@@ -617,7 +783,7 @@ class SingBoxPanelCard extends LitElement {
                     : ""}
                 <button
                     class="node-ping"
-                    title="Проверить пинг ${proxy.tag}"
+                    title=${this._t("pingTitle", { tag: proxy.tag })}
                     ?disabled=${pinging}
                     @click=${() => this._pingNode(proxy.tag, proxy.pingEntity)}
                 >
@@ -650,9 +816,7 @@ class SingBoxPanelCard extends LitElement {
     }
 
     _renderGroup(group) {
-        const state = this._entity(group.entityId);
-        const current =
-            state && state.state !== "unavailable" ? state.state : null;
+        const current = this._groupCurrent(group);
         const testing = Boolean(this._testing[group.tag]);
         return html`
             <div class="group">
@@ -667,7 +831,7 @@ class SingBoxPanelCard extends LitElement {
                         @click=${() => this._testGroup(group.tag, group.entityId)}
                     >
                         <ha-icon icon="mdi:flash-outline"></ha-icon>
-                        ${testing ? "Тест…" : "Тест"}
+                        ${testing ? this._t("testing") : this._t("test")}
                     </button>
                 </div>
                 <div class="nodes">
@@ -687,7 +851,7 @@ class SingBoxPanelCard extends LitElement {
             <div class="node ${active ? "active" : ""}">
                 <button
                     class="node-select"
-                    title="Выбрать ${option.tag}"
+                    title=${this._t("selectTitle", { tag: option.tag })}
                     @click=${() => this._selectNode(group.tag, option.tag, group.entityId)}
                 >
                     <span class="node-name">${option.tag}</span>
@@ -697,7 +861,7 @@ class SingBoxPanelCard extends LitElement {
                 </button>
                 <button
                     class="node-ping"
-                    title="Проверить пинг ${option.tag}"
+                    title=${this._t("pingTitle", { tag: option.tag })}
                     ?disabled=${pinging}
                     @click=${() => this._pingNode(option.tag, option.pingEntity || group.entityId)}
                 >

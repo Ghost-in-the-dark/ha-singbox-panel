@@ -107,10 +107,20 @@
             const card = document.querySelector("singbox-panel-card");
             if (card) card.hass = window.__fakeHass;
         };
+        // Like __pushState but targets a specific card container (used to test
+        // the update_interval throttle on a card that is not the first one).
+        window.__pushStateFor = (containerId, entityId, newState) => {
+            states[entityId] = { ...states[entityId], state: newState };
+            const card = document.querySelector(
+                `#${containerId} singbox-panel-card`
+            );
+            if (card) card.hass = window.__fakeHass;
+        };
         // Emulates the strict service schema of integration v0.3.8: any call
         // carrying entity_id is rejected (the card must retry without it).
         window.__failOnEntityId = false;
         window.__fakeHass = {
+            language: "ru",
             states,
             async callWS(msg) {
                 // deliberately no config_entries/get and no config_entry_id:
@@ -129,6 +139,21 @@
                     throw new Error("extra keys not allowed @ data['entity_id']");
                 }
                 window.__calls.push({ domain, service, data });
+                // A real integration applies the selection and HA pushes the
+                // new select state; emulate the state change on success.
+                if (
+                    domain === "singbox" &&
+                    service === "select_outbound" &&
+                    data &&
+                    data.entity_id &&
+                    data.outbound_tag &&
+                    states[data.entity_id]
+                ) {
+                    states[data.entity_id] = {
+                        ...states[data.entity_id],
+                        state: data.outbound_tag,
+                    };
+                }
             },
         };
         // device_id assigned to every registry entry; the stand switches it to
@@ -147,6 +172,8 @@
     <div id="card4"></div>
     <div id="card5"></div>
     <div id="card6"></div>
+    <div id="card7"></div>
+    <div id="card8"></div>
 
     <script type="module">
         import "../singbox-panel-card.js";
@@ -220,6 +247,39 @@
             card6.setConfig({ title: "NoAll", show_test_all: false });
             document.getElementById("card6").appendChild(card6);
             card6.hass = window.__fakeHass;
+        };
+        // seventh card: English UI (config override) + a 60 s render throttle.
+        // A pushed state change must NOT re-render until an interaction forces
+        // an immediate refresh (outbound selection).
+        window.__addCard7 = () => {
+            window.__registryDeviceId = "dev1";
+            window.__foreignRegistry = null;
+            const card7 = document.createElement("singbox-panel-card");
+            card7.setConfig({
+                title: "I18n",
+                language: "en",
+                update_interval: 60,
+            });
+            document.getElementById("card7").appendChild(card7);
+            card7.hass = window.__fakeHass;
+        };
+        // eighth card: exclusion changes applied after setConfig must rebuild
+        // the model right away (previously they only worked at first load).
+        window.__addCard8 = () => {
+            window.__registryDeviceId = "dev1";
+            window.__foreignRegistry = null;
+            const card8 = document.createElement("singbox-panel-card");
+            card8.setConfig({
+                title: "Reconfig",
+                exclude_outbounds: ["telaga-1-out"],
+            });
+            document.getElementById("card8").appendChild(card8);
+            card8.hass = window.__fakeHass;
+        };
+        // changes the exclusion list on the running eighth card
+        window.__reconfigCard8 = (exclude) => {
+            const card8 = document.querySelector("#card8 singbox-panel-card");
+            card8.setConfig({ title: "Reconfig", exclude_outbounds: exclude });
         };
     </script>
 </body>
