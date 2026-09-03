@@ -191,15 +191,30 @@ try {
     await firstTestBtn.click();
     await page.waitForTimeout(150);
     calls = await page.evaluate(() => window.__calls);
+    // The first group (telaga-out) currently has the urltest auto-entry
+    // selected. A group test must url-test every node individually — testing
+    // the group tag would only test the current selection and refresh nothing
+    // (the bug being fixed).
     check(
-        "click test -> url_test",
+        "group test with urltest selected -> per-node url_test",
         calls.some(
             (c) =>
                 c.service === "url_test" &&
-                c.data.outbound_tag === "telaga-out" &&
-                c.data.entity_id === "select.telaga_out"
-        ),
-        JSON.stringify(calls)
+                c.data.outbound_tag === "telaga-2-out" &&
+                c.data.entity_id === "sensor.telaga_2_out_ping"
+        ) &&
+            calls.some(
+                (c) =>
+                    c.service === "url_test" &&
+                    c.data.outbound_tag === "telaga-urltest-out" &&
+                    c.data.entity_id === "sensor.telaga_urltest_out_ping"
+            ) &&
+            !calls.some(
+                (c) =>
+                    c.service === "url_test" &&
+                    c.data.outbound_tag === "telaga-out"
+            ),
+        JSON.stringify(calls.slice(-6))
     );
     check("test button disabled while running", await firstTestBtn.isDisabled());
 
@@ -275,18 +290,27 @@ try {
     // -- "Проверить все" batch button on the main card ----------------------
     const testAllBtn = page.locator(".test-all-btn").first();
     check("test-all button rendered", (await testAllBtn.count()) > 0);
+    await page.evaluate(() => {
+        window.__calls = [];
+    });
     await testAllBtn.click();
     await page.waitForTimeout(200);
     calls = await page.evaluate(() => window.__calls);
     check(
-        "test-all -> url_test for every group",
+        "test-all -> url_test for every group node",
         calls.some(
             (c) =>
                 c.service === "url_test" &&
-                c.data.outbound_tag === "telaga-out" &&
-                c.data.entity_id === "select.telaga_out"
-        ),
-        JSON.stringify(calls.slice(-8))
+                c.data.outbound_tag === "telaga-2-out" &&
+                c.data.entity_id === "sensor.telaga_2_out_ping"
+        ) &&
+            calls.some(
+                (c) =>
+                    c.service === "url_test" &&
+                    c.data.outbound_tag === "Ru-3-out" &&
+                    c.data.entity_id === "sensor.ru_3_out_ping"
+            ),
+        JSON.stringify(calls.slice(-12))
     );
     check(
         "test-all -> url_test for every standalone",
@@ -295,13 +319,27 @@ try {
                 c.service === "url_test" &&
                 c.data.outbound_tag === "main-out" &&
                 c.data.entity_id === "sensor.main_out_ping"
-        ),
-        JSON.stringify(calls.slice(-8))
+        ) &&
+            calls.some(
+                (c) =>
+                    c.service === "url_test" &&
+                    c.data.outbound_tag === "EU-out" &&
+                    c.data.entity_id === "sensor.eu_out_ping"
+            ),
+        JSON.stringify(calls.slice(-12))
     );
     check(
-        "test-all never targets GLOBAL",
-        !calls.some((c) => c.service === "url_test" && c.data.outbound_tag === "GLOBAL"),
-        JSON.stringify(calls.slice(-8))
+        "test-all never targets group tags or GLOBAL",
+        !calls.some(
+            (c) =>
+                c.service === "url_test" &&
+                (c.data.outbound_tag === "GLOBAL" ||
+                    /^(telaga-out|Ru-out)$/.test(c.data.outbound_tag))
+        ) &&
+            !calls.some(
+                (c) => c.service === "url_test" && /^select\./.test(c.data.entity_id)
+            ),
+        JSON.stringify(calls.slice(-12))
     );
     check("test-all button disabled while running", await testAllBtn.isDisabled());
 
@@ -440,6 +478,35 @@ try {
             const el = Card.getConfigElement();
             return el instanceof customElements.get("singbox-panel-card-editor");
         })
+    );
+
+    // -- visual editor renders translated interval options -------------------
+    // Lit renders the editor into its shadow DOM, so read the option labels
+    // through a shadow-piercing locator (textContent of the host is empty).
+    await page.evaluate(() => window.__addEditor("ru"));
+    await page.waitForSelector("#editor1 mwc-list-item");
+    const editorItemsRu = await page
+        .locator("#editor1 mwc-list-item")
+        .allTextContents();
+    check(
+        "editor ru: interval options translated",
+        editorItemsRu.some((t) => t.includes("5 сек")) &&
+            editorItemsRu.some((t) => t.includes("Авто (как в Home Assistant)")) &&
+            !editorItemsRu.some((t) => t.includes("intervalSec")) &&
+            !editorItemsRu.some((t) => t.includes("intervalLive")),
+        editorItemsRu.map((t) => t.trim()).join(" | ")
+    );
+    await page.evaluate(() => window.__addEditor("en"));
+    await page.waitForTimeout(150);
+    const editorItemsEn = await page
+        .locator("#editor1 mwc-list-item")
+        .allTextContents();
+    check(
+        "editor en: interval options translated",
+        editorItemsEn.some((t) => t.includes("5 s")) &&
+            !editorItemsEn.some((t) => t.includes("intervalSec")) &&
+            !editorItemsEn.some((t) => t.includes("intervalLive")),
+        editorItemsEn.map((t) => t.trim()).join(" | ")
     );
 
     await page.screenshot({ path: "tests/stand.png", fullPage: true });

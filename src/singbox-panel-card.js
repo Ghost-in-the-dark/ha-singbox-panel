@@ -3,7 +3,7 @@ import { cardStyles } from "./singbox-panel-card-style.js";
 import { resolveLanguage, translate } from "./singbox-panel-i18n.js";
 import "./singbox-panel-card-editor.js";
 
-const CARD_VERSION = "0.1.13";
+const CARD_VERSION = "0.1.14";
 
 // unique_id formats used by the ha-singbox integration:
 //   select: "{entry_id}_group_{group_tag}"
@@ -597,21 +597,43 @@ class SingBoxPanelCard extends LitElement {
         this._scheduleRender(true);
     }
 
-    async _testGroup(groupTag, target) {
-        if (!this._hass || this._testing[groupTag]) return;
-        this._testing = { ...this._testing, [groupTag]: true };
+    // Re-runs the url-test of every visible outbound of one group. A single
+    // url_test on the group *tag* is not enough: sing-box only tests the
+    // currently selected outbound of a Selector group, so when the urltest
+    // auto-entry is selected (the common case) none of the node pings would
+    // refresh. Testing each node individually works on both backends and
+    // updates every chip. Errors on individual outbounds don't abort.
+    async _testGroup(group) {
+        const options = group.options || [];
+        if (!this._hass || this._testing[group.tag] || options.length === 0) {
+            return;
+        }
+        const nodeFlags = Object.fromEntries(
+            options.map((o) => [o.tag, true])
+        );
+        this._testing = { ...this._testing, [group.tag]: true, ...nodeFlags };
         try {
-            await this._callService(
-                "singbox",
-                "url_test",
-                { outbound_tag: groupTag },
-                target
+            await Promise.all(
+                options.map((o) =>
+                    this._callService(
+                        "singbox",
+                        "url_test",
+                        { outbound_tag: o.tag },
+                        o.pingEntity || group.entityId
+                    ).catch((err) => {
+                        console.error(
+                            `singbox-panel: url_test failed for ${o.tag}`,
+                            err
+                        );
+                    })
+                )
             );
-        } catch (err) {
-            console.error("singbox-panel: url_test failed", err);
         } finally {
             setTimeout(() => {
-                this._testing = { ...this._testing, [groupTag]: false };
+                const next = { ...this._testing };
+                delete next[group.tag];
+                for (const o of options) delete next[o.tag];
+                this._testing = next;
             }, 4000);
         }
     }
@@ -635,21 +657,27 @@ class SingBoxPanelCard extends LitElement {
         }
     }
 
-    // One tap re-runs the url-test of every visible group and standalone
-    // outbound. Errors on individual outbounds don't abort the batch.
+    // One tap re-runs the url-test of every visible outbound (each node of
+    // every group plus every standalone) — the per-node form works on both
+    // backends, unlike testing group tags (see _testGroup). Errors on
+    // individual outbounds don't abort the batch.
     async _testAll() {
         if (!this._hass || !this._model || this._testingAll) return;
         this._testingAll = true;
-        const targets = [
-            ...this._model.groups.map((g) => ({
-                tag: g.tag,
-                target: g.entityId,
-            })),
-            ...this._model.standalone.map((p) => ({
-                tag: p.tag,
-                target: p.pingEntity,
-            })),
-        ];
+        const seen = new Set();
+        const targets = [];
+        for (const g of this._model.groups) {
+            for (const o of g.options) {
+                if (seen.has(o.tag)) continue;
+                seen.add(o.tag);
+                targets.push({ tag: o.tag, target: o.pingEntity || g.entityId });
+            }
+        }
+        for (const p of this._model.standalone) {
+            if (seen.has(p.tag)) continue;
+            seen.add(p.tag);
+            targets.push({ tag: p.tag, target: p.pingEntity });
+        }
         try {
             await Promise.all(
                 targets.map((t) =>
@@ -828,7 +856,7 @@ class SingBoxPanelCard extends LitElement {
                     <button
                         class="test-btn"
                         ?disabled=${testing}
-                        @click=${() => this._testGroup(group.tag, group.entityId)}
+                        @click=${() => this._testGroup(group)}
                     >
                         <ha-icon icon="mdi:flash-outline"></ha-icon>
                         ${testing ? this._t("testing") : this._t("test")}

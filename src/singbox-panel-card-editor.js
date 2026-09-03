@@ -81,8 +81,8 @@ class SingBoxPanelCardEditor extends LitElement {
     }
 
     _intervalLabel(n) {
-        if (n === 0) return this._t("intervalLive");
-        return this._t("intervalSec", { n });
+        if (n === 0) return this._t("editor.intervalLive");
+        return this._t("editor.intervalSec", { n });
     }
 
     render() {
