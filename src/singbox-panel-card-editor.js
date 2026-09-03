@@ -11,10 +11,20 @@ import { resolveLanguage, translate } from "./singbox-panel-i18n.js";
 // state change).
 const INTERVAL_OPTIONS = [0, 1, 2, 3, 5, 10, 30, 60];
 
+// unique_id markers of the ha-singbox entities (kept in sync with the card):
+//   select: "{entry_id}_group_{group_tag}"
+//   ping:   "{entry_id}_ping_{proxy_tag}"
+//   mode:   "{entry_id}_clash_mode"
+const GROUP_MARK = "_group_";
+const PING_MARK = "_ping_";
+const CLASH_MODE_SUFFIX = "_clash_mode";
+const SYNTHETIC_GLOBAL = "GLOBAL";
+
 class SingBoxPanelCardEditor extends LitElement {
     static properties = {
         hass: {},
         _config: { state: true },
+        _candidates: { state: true },
     };
 
     static styles = css`
@@ -30,6 +40,7 @@ class SingBoxPanelCardEditor extends LitElement {
         .row .label {
             flex: 1;
             font-size: 13px;
+            overflow-wrap: anywhere;
         }
         ha-textfield,
         ha-select {
@@ -38,15 +49,33 @@ class SingBoxPanelCardEditor extends LitElement {
         .block {
             margin-top: 12px;
         }
+        .block-title {
+            font-size: 13px;
+            color: var(--secondary-text-color);
+        }
         .hint {
             font-size: 11px;
             color: var(--secondary-text-color);
             margin: 2px 0 8px;
         }
+        .exclude-tag {
+            font-family: var(--paper-font-common-base-code-family, monospace);
+        }
     `;
 
     setConfig(config) {
         this._config = { ...config };
+        this._loadCandidates();
+    }
+
+    firstUpdated() {
+        this._loadCandidates();
+    }
+
+    updated(changed) {
+        // hass may arrive after firstUpdated (HA wires the editor after
+        // creating it) — load the outbound list once it is available.
+        if (changed.has("hass")) this._loadCandidates();
     }
 
     _lang() {
@@ -76,8 +105,110 @@ class SingBoxPanelCardEditor extends LitElement {
         this._update(key, ev.target.checked);
     }
 
-    _onSelect(ev, key) {
-        this._update(key, ev.target.value);
+    // ha-select changed its contract between HA releases: older builds are
+    // mwc-select based (list-item children, fires `change` with target.value),
+    // current builds take an `options` array and fire `selected` with
+    // detail.value. Both events are bound and the shape that does not apply
+    // is ignored, so a pick works on any HA.
+    _onSelectChange(ev, key) {
+        // current ha-select never fires `change`; a mwc `change` has no
+        // detail.value payload
+        if (ev.detail && "value" in ev.detail) return;
+        this._applySelect(key, ev.target && ev.target.value);
+    }
+
+    _onSelectSelected(ev, key) {
+        // mwc also fires `selected`, but only with detail.index — the value
+        // comes later via `change`; current ha-select carries detail.value
+        if (!ev.detail || !("value" in ev.detail)) return;
+        this._applySelect(key, ev.detail.value);
+    }
+
+    _applySelect(key, value) {
+        if (value === undefined || value === null || value === "") return;
+        if (key === "update_interval") value = Number(value);
+        this._update(key, value);
+    }
+
+    _toggleExclude(tag, checked) {
+        const next = new Set(this._config.exclude_outbounds || []);
+        if (checked) {
+            next.add(tag);
+        } else {
+            next.delete(tag);
+        }
+        this._update("exclude_outbounds", [...next].sort());
+    }
+
+    // -- outbound discovery (drives the exclude check list) -----------------
+
+    // Loads the outbound tags the card can display, mirroring the card's
+    // entity model: ping sensors for standalone nodes, the options of every
+    // group select for members. Falls back to the comma text field when the
+    // registry cannot be read (or yields nothing).
+    async _loadCandidates() {
+        if (this._candidates !== undefined || this._loading) return;
+        if (!this.hass || typeof this.hass.callWS !== "function") return;
+        this._loading = true;
+        try {
+            const registry = await this.hass.callWS({
+                type: "config/entity_registry/list",
+            });
+            this._candidates = this._candidateTags(registry || []);
+        } catch (_) {
+            this._candidates = [];
+        } finally {
+            this._loading = false;
+        }
+    }
+
+    _candidateTags(registry) {
+        const deviceId = this._config && this._config.device_id;
+        const tags = new Set();
+        for (const e of registry) {
+            if (e.platform !== "singbox") continue;
+            if (deviceId && e.device_id !== deviceId) continue;
+            const uid = e.unique_id || "";
+            const domain = (e.entity_id || "").split(".")[0];
+            if (domain === "sensor" && uid.includes(PING_MARK)) {
+                const tag = uid.slice(
+                    uid.lastIndexOf(PING_MARK) + PING_MARK.length
+                );
+                if (tag !== SYNTHETIC_GLOBAL) tags.add(tag);
+            } else if (
+                domain === "select" &&
+                uid.includes(GROUP_MARK) &&
+                !uid.endsWith(CLASH_MODE_SUFFIX)
+            ) {
+                const state =
+                    this.hass.states && this.hass.states[e.entity_id];
+                const options =
+                    state &&
+                    state.attributes &&
+                    Array.isArray(state.attributes.options)
+                        ? state.attributes.options
+                        : [];
+                options.forEach((tag) => tags.add(tag));
+            }
+        }
+        return [...tags].sort((a, b) => a.localeCompare(b));
+    }
+
+    // -- selector data ------------------------------------------------------
+
+    _languageOptions() {
+        return [
+            { value: "auto", label: this._t("editor.languageAuto") },
+            { value: "ru", label: "Русский" },
+            { value: "en", label: "English" },
+        ];
+    }
+
+    _intervalOptions() {
+        return INTERVAL_OPTIONS.map((n) => ({
+            value: String(n),
+            label: this._intervalLabel(n),
+        }));
     }
 
     _intervalLabel(n) {
@@ -88,6 +219,10 @@ class SingBoxPanelCardEditor extends LitElement {
     render() {
         const cfg = this._config || {};
         const interval = Number(cfg.update_interval) || 0;
+        const excluded = new Set(cfg.exclude_outbounds || []);
+        const languageOptions = this._languageOptions();
+        const intervalOptions = this._intervalOptions();
+        const hasCandidates = (this._candidates || []).length > 0;
         return html`
             <ha-textfield
                 label=${this._t("editor.title")}
@@ -99,13 +234,17 @@ class SingBoxPanelCardEditor extends LitElement {
                 <ha-select
                     label=${this._t("editor.language")}
                     .value=${cfg.language || "auto"}
-                    @change=${(ev) => this._onSelect(ev, "language")}
+                    .options=${languageOptions}
+                    @change=${(ev) => this._onSelectChange(ev, "language")}
+                    @selected=${(ev) => this._onSelectSelected(ev, "language")}
                 >
-                    <mwc-list-item value="auto">
-                        ${this._t("editor.languageAuto")}
-                    </mwc-list-item>
-                    <mwc-list-item value="ru">Русский</mwc-list-item>
-                    <mwc-list-item value="en">English</mwc-list-item>
+                    ${languageOptions.map(
+                        (o) => html`
+                            <mwc-list-item value=${o.value}>
+                                ${o.label}
+                            </mwc-list-item>
+                        `
+                    )}
                 </ha-select>
             </div>
 
@@ -113,13 +252,16 @@ class SingBoxPanelCardEditor extends LitElement {
                 <ha-select
                     label=${this._t("editor.interval")}
                     .value=${String(interval)}
+                    .options=${intervalOptions}
                     @change=${(ev) =>
-                        this._update("update_interval", Number(ev.target.value))}
+                        this._onSelectChange(ev, "update_interval")}
+                    @selected=${(ev) =>
+                        this._onSelectSelected(ev, "update_interval")}
                 >
-                    ${INTERVAL_OPTIONS.map(
-                        (n) => html`
-                            <mwc-list-item value=${String(n)}>
-                                ${this._intervalLabel(n)}
+                    ${intervalOptions.map(
+                        (o) => html`
+                            <mwc-list-item value=${o.value}>
+                                ${o.label}
                             </mwc-list-item>
                         `
                     )}
@@ -136,19 +278,47 @@ class SingBoxPanelCardEditor extends LitElement {
             </div>
             <div class="hint">${this._t("editor.showTestAllHint")}</div>
 
-            <ha-textfield
-                label=${this._t("editor.exclude")}
-                value=${(cfg.exclude_outbounds || []).join(", ")}
-                @change=${(ev) =>
-                    this._update(
-                        "exclude_outbounds",
-                        ev.target.value
-                            .split(",")
-                            .map((t) => t.trim())
-                            .filter(Boolean)
-                    )}
-            ></ha-textfield>
-            <div class="hint">${this._t("editor.excludeHint")}</div>
+            ${hasCandidates
+                ? html`
+                      <div class="block">
+                          <div class="block-title">
+                              ${this._t("editor.exclude")}
+                          </div>
+                          <div class="hint">${this._t("editor.excludeHint")}</div>
+                          ${this._candidates.map(
+                              (tag) => html`
+                                  <div class="row exclude-row">
+                                      <span class="label exclude-tag"
+                                          >${tag}</span
+                                      >
+                                      <ha-switch
+                                          .checked=${excluded.has(tag)}
+                                          @change=${(ev) =>
+                                              this._toggleExclude(
+                                                  tag,
+                                                  ev.target.checked
+                                              )}
+                                      ></ha-switch>
+                                  </div>
+                              `
+                          )}
+                      </div>
+                  `
+                : html`
+                      <ha-textfield
+                          label=${this._t("editor.exclude")}
+                          value=${(cfg.exclude_outbounds || []).join(", ")}
+                          @change=${(ev) =>
+                              this._update(
+                                  "exclude_outbounds",
+                                  ev.target.value
+                                      .split(",")
+                                      .map((t) => t.trim())
+                                      .filter(Boolean)
+                              )}
+                      ></ha-textfield>
+                      <div class="hint">${this._t("editor.excludeHint")}</div>
+                  `}
 
             <ha-textfield
                 label=${this._t("editor.device")}

@@ -509,6 +509,105 @@ try {
         editorItemsEn.map((t) => t.trim()).join(" | ")
     );
 
+    // -- editor: exclude list is built from the discovered outbounds ---------
+    // (the stand's ha-select/mwc-list-item/ha-switch are plain unknown
+    // elements, so interaction is exercised by dispatching the exact events
+    // the real elements fire: `change` on legacy mwc selects, `selected`
+    // {value} on the current ha-select, `change` on switches.)
+    await page.waitForFunction(() => {
+        const ed = document.querySelector("#editor1 singbox-panel-card-editor");
+        if (!ed || !ed.shadowRoot) return false;
+        return ed.shadowRoot.querySelectorAll(".exclude-row").length > 0;
+    });
+    const excludeTags = await page.evaluate(() => {
+        const ed = document.querySelector("#editor1 singbox-panel-card-editor");
+        return [...ed.shadowRoot.querySelectorAll(".exclude-row .label")].map(
+            (n) => n.textContent.trim()
+        );
+    });
+    check(
+        "editor exclude: lists discovered outbounds",
+        excludeTags.includes("main-out") &&
+            excludeTags.includes("EU-out") &&
+            excludeTags.includes("telaga-urltest-out") &&
+            excludeTags.includes("Ru-1-out") &&
+            !excludeTags.includes("GLOBAL") &&
+            excludeTags.length === 9,
+        excludeTags.join(", ")
+    );
+    await page.evaluate(() => {
+        window.__editorConfigs = [];
+        const ed = document.querySelector(
+            "#editor1 singbox-panel-card-editor"
+        );
+        ed.addEventListener("config-changed", (e) =>
+            window.__editorConfigs.push(e.detail.config)
+        );
+    });
+    await page.evaluate(() => {
+        const ed = document.querySelector(
+            "#editor1 singbox-panel-card-editor"
+        );
+        const selects = ed.shadowRoot.querySelectorAll("ha-select");
+        // legacy mwc contract: `change` with target.value
+        const lang = selects[0];
+        lang.value = "ru";
+        lang.dispatchEvent(new Event("change", { bubbles: true }));
+        const interval = selects[1];
+        interval.value = "30";
+        interval.dispatchEvent(new Event("change", { bubbles: true }));
+        // current ha-select contract: `selected` with detail.value
+        lang.dispatchEvent(
+            new CustomEvent("selected", {
+                detail: { value: "en" },
+                bubbles: true,
+                composed: true,
+            })
+        );
+        interval.dispatchEvent(
+            new CustomEvent("selected", {
+                detail: { value: "10" },
+                bubbles: true,
+                composed: true,
+            })
+        );
+    });
+    await page.waitForTimeout(50);
+    const selectConfig = await page.evaluate(
+        () => window.__editorConfigs.at(-1)
+    );
+    check(
+        "editor selects: both event contracts update the config",
+        selectConfig &&
+            selectConfig.language === "en" &&
+            selectConfig.update_interval === 10,
+        JSON.stringify(selectConfig)
+    );
+    await page.evaluate(() => {
+        const ed = document.querySelector(
+            "#editor1 singbox-panel-card-editor"
+        );
+        for (const row of ed.shadowRoot.querySelectorAll(".exclude-row")) {
+            if (row.querySelector(".label").textContent.trim() === "main-out") {
+                const sw = row.querySelector("ha-switch");
+                sw.checked = true;
+                sw.dispatchEvent(new Event("change", { bubbles: true }));
+                break;
+            }
+        }
+    });
+    await page.waitForTimeout(50);
+    const excludeConfig = await page.evaluate(
+        () => window.__editorConfigs.at(-1)
+    );
+    check(
+        "editor exclude: switch toggles the tag in exclude_outbounds",
+        Array.isArray(excludeConfig.exclude_outbounds) &&
+            excludeConfig.exclude_outbounds.length === 1 &&
+            excludeConfig.exclude_outbounds[0] === "main-out",
+        JSON.stringify(excludeConfig)
+    );
+
     await page.screenshot({ path: "tests/stand.png", fullPage: true });
     console.log("  screenshot: tests/stand.png");
 } finally {

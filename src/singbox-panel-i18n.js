@@ -102,12 +102,12 @@ const MESSAGES = {
             en: "Batch url-test of every group and outbound in one tap.",
         },
         exclude: {
-            ru: "Исключить outbound (через запятую)",
-            en: "Exclude outbounds (comma-separated)",
+            ru: "Скрыть outbound из карточки",
+            en: "Hide outbounds from the card",
         },
         excludeHint: {
-            ru: "Эти теги будут скрыты из групп и блока Outbound. Например: telaga-urltest-out, main-out",
-            en: "These tags are hidden from the groups and the Outbound block. E.g.: telaga-urltest-out, main-out",
+            ru: "Отмеченные теги не показываются в группах и блоке Outbound.",
+            en: "Checked tags are hidden from the groups and the Outbound block.",
         },
         device: { ru: "device_id (необязательно)", en: "device_id (optional)" },
         deviceHint: {

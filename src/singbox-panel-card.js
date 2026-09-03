@@ -3,7 +3,7 @@ import { cardStyles } from "./singbox-panel-card-style.js";
 import { resolveLanguage, translate } from "./singbox-panel-i18n.js";
 import "./singbox-panel-card-editor.js";
 
-const CARD_VERSION = "0.1.14";
+const CARD_VERSION = "0.1.15";
 
 // unique_id formats used by the ha-singbox integration:
 //   select: "{entry_id}_group_{group_tag}"
