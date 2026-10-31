@@ -27,16 +27,22 @@ traffic totals, per-proxy pings and one-click proxy switching.
 
 ## Installation
 
-### HACS (recommended)
+### Bundled with the integration (recommended)
+
+The card ships inside the [ha-singbox](https://github.com/Ghost-in-the-dark/ha-singbox)
+integration and needs no installation of its own: the integration serves it
+and registers the Lovelace resource automatically. Just add
+`type: custom:singbox-panel-card`.
+
+### HACS as a custom repository (optional)
+
+This card is **not** in the HACS default store, so it has to be added by hand:
 
 1. In HACS go to **Frontend** → **⋮** → **Custom repositories** and add
    `https://github.com/Ghost-in-the-dark/ha-singbox-panel` with category
    **Frontend**.
 2. Search for **Sing-box Panel Card** and download it.
 3. Reload the Lovelace resources (or refresh the page).
-4. Add the resource: **Settings → Dashboards → ⋮ → Resources → Add resource**:
-   `/hacsfiles/ha-singbox-panel/singbox-panel-card.js` (type: JavaScript
-   Module). This step is automatic in newer Home Assistant versions.
 
 ### Manual
 
