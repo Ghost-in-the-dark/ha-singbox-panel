@@ -3,7 +3,7 @@ import { cardStyles } from "./singbox-panel-card-style.js";
 import { resolveLanguage, translate } from "./singbox-panel-i18n.js";
 import "./singbox-panel-card-editor.js";
 
-const CARD_VERSION = "0.1.15";
+const CARD_VERSION = "0.1.16";
 
 // unique_id formats used by the ha-singbox integration:
 //   select: "{entry_id}_group_{group_tag}"
@@ -900,12 +900,23 @@ class SingBoxPanelCard extends LitElement {
     }
 }
 
-customElements.define("singbox-panel-card", SingBoxPanelCard);
+// The card can be loaded twice: once as an extra frontend module injected
+// into index.html and once as a Lovelace resource. Both resolve to the same
+// URL, but the two import paths may use different credentials (the bootstrap
+// script sets crossorigin="use-credentials"), so the browser can evaluate the
+// module in two separate instances. Guard both registrations: on the modern
+// path the second instance would otherwise throw NotSupportedError from
+// define(), and the element would stop rendering after the page settles.
+if (!customElements.get("singbox-panel-card")) {
+    customElements.define("singbox-panel-card", SingBoxPanelCard);
+}
 
 window.customCards = window.customCards || [];
-window.customCards.push({
-    type: "singbox-panel-card",
-    name: "Sing-box Panel",
-    description: "Панель мониторинга и управления прокси sing-box",
-    preview: false,
-});
+if (!window.customCards.some((card) => card.type === "singbox-panel-card")) {
+    window.customCards.push({
+        type: "singbox-panel-card",
+        name: "Sing-box Panel",
+        description: "Панель мониторинга и управления прокси sing-box",
+        preview: false,
+    });
+}

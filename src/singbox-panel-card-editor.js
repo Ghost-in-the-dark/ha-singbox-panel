@@ -337,4 +337,8 @@ class SingBoxPanelCardEditor extends LitElement {
     }
 }
 
-customElements.define("singbox-panel-card-editor", SingBoxPanelCardEditor);
+// The bundle can be evaluated in more than one module instance, so only
+// register the element when it is not defined yet (see the card itself).
+if (!customElements.get("singbox-panel-card-editor")) {
+    customElements.define("singbox-panel-card-editor", SingBoxPanelCardEditor);
+}
