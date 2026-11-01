@@ -2,8 +2,16 @@ import { LitElement, html } from "lit";
 import { cardStyles } from "./singbox-panel-card-style.js";
 import { resolveLanguage, translate } from "./singbox-panel-i18n.js";
 import "./singbox-panel-card-editor.js";
+import { niceCeiling, renderTrafficChart } from "./singbox-panel-graph.js";
+import {
+    distinctValues,
+    filterConnections,
+    normalizeConnection,
+    renderConnections,
+    sortConnections,
+} from "./singbox-panel-connections.js";
 
-const CARD_VERSION = "0.1.16";
+const CARD_VERSION = "0.1.17";
 
 // unique_id formats used by the ha-singbox integration:
 //   select: "{entry_id}_group_{group_tag}"
@@ -20,6 +28,15 @@ const SYNTHETIC_GLOBAL = "GLOBAL";
 const PENDING_SELECT_TTL_MS = 10000;
 
 const DEFAULT_TITLE = "Sing-box";
+
+// Traffic chart: how many samples the ring buffer holds and how far back the
+// window spans. One sample per hass push (the integration pushes about once a
+// second), so 300 samples cover roughly five minutes at full rate and are
+// thinned down to the window when renders are slower.
+const CHART_MAX_SAMPLES = 300;
+const CHART_WINDOW_MS = 5 * 60 * 1000;
+// Minimum spacing between two chart samples (Home Assistant pushes faster).
+const CHART_MIN_SAMPLE_MS = 900;
 
 class SingBoxPanelCard extends LitElement {
     // _hass is intentionally NOT a reactive property: HA hands us a fresh
@@ -52,12 +69,35 @@ class SingBoxPanelCard extends LitElement {
         this._renderTimer = null;
         // Optimistic outbound selections: entity_id -> { tag, ts }.
         this._pendingSelections = {};
+        // Traffic history for the chart (bounded ring buffer) and the value of
+        // the last sample so a sample is only stored when traffic changed.
+        this._chartSamples = [];
+        // Connections: the list comes from the singbox/connections WS command,
+        // polled on the card's own cadence (it is not part of the state push).
+        this._connections = [];
+        this._connectionsSupported = true;
+        this._connectionsError = null;
+        this._connFilter = {
+            query: "",
+            network: "",
+            protocol: "",
+            outbound: "",
+        };
+        this._closingAll = false;
+        this._connPollTimer = null;
+        this._connFetchInFlight = false;
+        this._chartTimer = null;
     }
 
     static getStubConfig() {
         return {
             title: DEFAULT_TITLE,
             show_test_all: true,
+            show_speeds: true,
+            show_totals: true,
+            show_chart: true,
+            show_groups: true,
+            show_connections: true,
             exclude_outbounds: [],
             update_interval: 0,
             language: "auto",
@@ -76,11 +116,28 @@ class SingBoxPanelCard extends LitElement {
         const next = {
             title: DEFAULT_TITLE,
             show_test_all: true,
+            show_speeds: true,
+            show_totals: true,
+            show_chart: true,
+            show_groups: true,
+            show_connections: true,
             exclude_outbounds: [],
             update_interval: 0,
             language: "auto",
             ...config,
         };
+        // Section switches: only an explicit false hides a block, so configs
+        // written before these keys existed keep showing everything.
+        for (const key of [
+            "show_test_all",
+            "show_speeds",
+            "show_totals",
+            "show_chart",
+            "show_groups",
+            "show_connections",
+        ]) {
+            next[key] = next[key] !== false;
+        }
         // exclude_outbounds accepts a comma-separated string in YAML and an
         // array from the editor; normalize to a trimmed string array.
         next.exclude_outbounds = (Array.isArray(next.exclude_outbounds)
@@ -137,8 +194,23 @@ class SingBoxPanelCard extends LitElement {
             this._discovered = true;
             this._discover();
         }
+        if (hass) {
+            // Sample the speed sensors on every push so the chart has history
+            // even when rendering itself is throttled.
+            this._recordChartSample();
+        }
         // Re-render on every hass push, gated by the configured interval.
         if (hass) this._scheduleRender();
+    }
+
+    connectedCallback() {
+        super.connectedCallback();
+        if (this._discovered) this._startConnectionPolling();
+    }
+
+    disconnectedCallback() {
+        super.disconnectedCallback();
+        this._stopConnectionPolling();
     }
 
     // -- localization --------------------------------------------------------
@@ -303,6 +375,8 @@ class SingBoxPanelCard extends LitElement {
                 );
             }
             this._state = "ready";
+            this._startConnectionPolling();
+            this._fetchConnections();
         } catch (err) {
             this._state = "error";
             this._error = {
@@ -316,6 +390,24 @@ class SingBoxPanelCard extends LitElement {
 
     _buildModel(registryEntries) {
         const excluded = new Set(this._config.exclude_outbounds || []);
+        // Remember which config entry the discovered entities belong to: the
+        // connections command is entry-scoped, and the registry is the only
+        // place the card can learn the id from. Only sing-box-marked entities
+        // count — an unpinned discovery walks the whole registry, and the first
+        // foreign config_entry_id would point the command at another
+        // integration.
+        this._discoveredEntryId = null;
+        for (const e of registryEntries) {
+            if (!e || !e.config_entry_id || !e.unique_id) continue;
+            const marked =
+                e.unique_id.includes(GROUP_MARK) ||
+                e.unique_id.includes(PING_MARK) ||
+                e.unique_id.endsWith(CLASH_MODE_SUFFIX);
+            if (marked) {
+                this._discoveredEntryId = e.config_entry_id;
+                break;
+            }
+        }
         const pings = {}; // proxy tag -> ping sensor entity_id
         for (const e of registryEntries) {
             if (
@@ -494,6 +586,309 @@ class SingBoxPanelCard extends LitElement {
 
     _pingText(ms) {
         return ms === null ? "—" : `${ms} ms`;
+    }
+
+    // -- traffic chart -------------------------------------------------------
+
+    // Called on every hass push: reads the current up/down speed sensors and
+    // appends a sample to the bounded history. Sampling here (rather than on a
+    // timer) keeps the chart in step with the card's own refresh interval.
+    _recordChartSample(force = false) {
+        if (!this._model) return;
+        const up = this._speedValue(this._model.uplink);
+        const down = this._speedValue(this._model.downlink);
+        // Nothing to plot yet (sensors missing or unavailable).
+        if (up === null && down === null) return;
+        const now = Date.now();
+        const last = this._chartSamples[this._chartSamples.length - 1];
+        // `hass` arrives as often as Home Assistant likes, but the chart only
+        // needs one point per second: coalesce anything faster than that into
+        // the previous sample instead of blowing through the buffer.
+        if (!force && last && now - last.t < CHART_MIN_SAMPLE_MS) {
+            last.up = up || 0;
+            last.down = down || 0;
+            return;
+        }
+        this._chartSamples = [
+            ...this._chartSamples,
+            { t: now, up: up || 0, down: down || 0 },
+        ];
+        this._pruneChartSamples(now);
+    }
+
+    _pruneChartSamples(now) {
+        const cutoff = now - CHART_WINDOW_MS;
+        let samples = this._chartSamples.filter((s) => s.t >= cutoff);
+        // Hard cap even if pushes arrive faster than expected.
+        if (samples.length > CHART_MAX_SAMPLES) {
+            samples = samples.slice(samples.length - CHART_MAX_SAMPLES);
+        }
+        this._chartSamples = samples;
+    }
+
+    // Numeric value of a speed sensor in its own unit, or null.
+    _speedValue(id) {
+        const state = this._entity(id);
+        if (!state || state.state === "unavailable" || state.state === "unknown") {
+            return null;
+        }
+        const value = Number(state.state);
+        return Number.isFinite(value) ? value : null;
+    }
+
+    _chartCaption() {
+        const m = this._model;
+        const peak = this._chartSamples.reduce(
+            (acc, s) => Math.max(acc, s.up || 0, s.down || 0),
+            0
+        );
+        const unit =
+            (this._entity(m && m.downlink) &&
+                this._entity(m.downlink).attributes &&
+                this._entity(m.downlink).attributes.unit_of_measurement) ||
+            "";
+        const fmt = (v) =>
+            v.toLocaleString(undefined, { maximumFractionDigits: 1 });
+        return this._t("chart.peak", {
+            value: `${fmt(peak)} ${unit}`.trim(),
+        });
+    }
+
+    // Top-of-scale label ("0 — 5 kB/s") so the chart is readable without
+    // hovering: the ceiling is the rounded peak the chart draws against.
+    _chartScaleText() {
+        const peak = niceCeiling(
+            this._chartSamples.reduce(
+                (acc, s) => Math.max(acc, s.up || 0, s.down || 0),
+                0
+            )
+        );
+        const unit =
+            (this._entity(this._model && this._model.downlink) &&
+                this._entity(this._model.downlink).attributes &&
+                this._entity(this._model.downlink).attributes.unit_of_measurement) ||
+            "";
+        const fmt = (v) =>
+            v.toLocaleString(undefined, { maximumFractionDigits: 1 });
+        return `0 – ${fmt(peak)} ${unit}`.trim();
+    }
+
+    _renderChart() {
+        const now = Date.now();
+        const first = this._chartSamples[0];
+        // A fixed window would squeeze the first seconds of history into a
+        // spike at the right edge. Start at the oldest sample while the
+        // buffer is still shorter than the window, and slide to the full
+        // window once it fills up.
+        const start = first
+            ? Math.max(first.t, now - CHART_WINDOW_MS)
+            : now - CHART_WINDOW_MS;
+        return renderTrafficChart({
+            samples: this._chartSamples,
+            startMs: start,
+            endMs: now,
+            emptyText: this._t("chart.empty"),
+            peakText: this._chartSamples.length > 1 ? this._chartCaption() : "",
+            scaleText:
+                this._chartSamples.length > 1 ? this._chartScaleText() : "",
+        });
+    }
+
+    // -- connections ---------------------------------------------------------
+
+    // Polls the integration's WS command. Deliberately independent of the hass
+    // state push: the connection list is not a set of entities, so nothing
+    // would trigger a refresh otherwise.
+    _startConnectionPolling() {
+        if (this._connPollTimer) return;
+        const interval = this._refreshMs() > 0 ? this._refreshMs() : 2000;
+        const tick = () => {
+            this._connPollTimer = setTimeout(() => {
+                this._fetchConnections();
+                tick();
+            }, Math.max(interval, 1000));
+        };
+        tick();
+        // The chart cannot rely on hass pushes: Home Assistant only hands the
+        // card a new hass object when a state actually changes, so a quiet
+        // link (or a stalled sensor) would leave the chart empty forever.
+        // Sample on the same timer instead.
+        this._startChartTimer();
+    }
+
+    _startChartTimer() {
+        if (this._chartTimer) return;
+        const tick = () => {
+            this._chartTimer = setTimeout(() => {
+                this._recordChartSample();
+                this._scheduleRender();
+                tick();
+            }, 1000);
+        };
+        tick();
+    }
+
+    _stopChartTimer() {
+        if (this._chartTimer) {
+            clearTimeout(this._chartTimer);
+            this._chartTimer = null;
+        }
+    }
+
+    _stopConnectionPolling() {
+        if (this._connPollTimer) {
+            clearTimeout(this._connPollTimer);
+            this._connPollTimer = null;
+        }
+        this._stopChartTimer();
+    }
+
+    async _fetchConnections() {
+        if (!this._hass || this._connFetchInFlight) return;
+        // The list is an optional feature: older integrations simply do not
+        // have the command, and that must not break the rest of the card.
+        if (this._config.show_connections === false) return;
+        this._connFetchInFlight = true;
+        try {
+            // The command validates entry_id with cv.string, which rejects
+            // null — omit the key entirely when nothing is pinned.
+            const message = { type: "singbox/connections" };
+            const entryId = this._entryId();
+            if (entryId) message.entry_id = entryId;
+            let res;
+            try {
+                res = await this._hass.callWS(message);
+            } catch (err) {
+                // The registry can name an entry that is no longer loaded (a
+                // re-added instance, a disabled entry). The id is only a hint,
+                // so retry entry-less before treating it as a failure.
+                if (!entryId) throw err;
+                res = await this._hass.callWS({ type: "singbox/connections" });
+            }
+            const supported = res && res.supported !== false;
+            const list = Array.isArray(res && res.connections)
+                ? res.connections.map(normalizeConnection).filter(Boolean)
+                : [];
+            const changed =
+                supported !== this._connectionsSupported ||
+                (supported && list.length !== this._connections.length);
+            this._connectionsSupported = supported;
+            this._connections = supported ? sortConnections(list) : [];
+            this._connectionsError = null;
+            // Not reactive on purpose: a poll must respect the render throttle
+            // instead of forcing a paint every second.
+            if (changed) this._scheduleRender();
+        } catch (err) {
+            const msg = String(err && err.message ? err.message : err);
+            // "Unknown command" / "not found" means an integration without the
+            // feature — show the calm "unsupported" note, not an error.
+            if (/unknown command|not_found|not found/i.test(msg)) {
+                this._connectionsSupported = false;
+                this._connections = [];
+                this._connectionsError = null;
+            } else {
+                this._connectionsError = { msg };
+            }
+        } finally {
+            this._connFetchInFlight = false;
+        }
+    }
+
+    // The WS command accepts an entry_id to target one sing-box instance. It
+    // is derived from the discovered entities when the user pinned nothing.
+    _entryId() {
+        return this._config.entry_id || this._discoveredEntryId || null;
+    }
+
+    _setConnFilter(patch) {
+        this._connFilter = { ...this._connFilter, ...patch };
+        // A filter edit is a direct user action: render immediately.
+        this._requestRender();
+    }
+
+    async _closeConnection(id) {
+        if (!this._hass || !id) return;
+        try {
+            await this._callService("singbox", "close_connection", {
+                connection_id: id,
+            });
+            // Drop it locally right away; the next poll confirms.
+            this._connections = this._connections.filter((c) => c.id !== id);
+            this._requestRender();
+        } catch (err) {
+            console.error("singbox-panel: close_connection failed", err);
+        }
+    }
+
+    async _closeAllConnections() {
+        if (!this._hass || this._closingAll) return;
+        this._closingAll = true;
+        try {
+            await this._callService("singbox", "close_all_connections", {});
+            this._connections = [];
+            this._requestRender();
+        } catch (err) {
+            console.error("singbox-panel: close_all_connections failed", err);
+        } finally {
+            setTimeout(() => {
+                this._closingAll = false;
+            }, 2000);
+        }
+    }
+
+    _formatConnBytes(bytes) {
+        const units = ["B", "KiB", "MiB", "GiB", "TiB"];
+        let scaled = Number(bytes) || 0;
+        let idx = 0;
+        while (scaled >= 1024 && idx < units.length - 1) {
+            scaled /= 1024;
+            idx += 1;
+        }
+        const digits = idx ? 1 : 0;
+        return `${scaled.toLocaleString(undefined, {
+            maximumFractionDigits: digits,
+        })} ${units[idx]}`;
+    }
+
+    _formatConnAge(startedAt) {
+        if (!startedAt) return "";
+        const sec = Math.max(0, Math.round((Date.now() - startedAt) / 1000));
+        if (sec < 60) return `${sec}s`;
+        const min = Math.floor(sec / 60);
+        if (min < 60) return `${min}m`;
+        const hours = Math.floor(min / 60);
+        if (hours < 24) return `${hours}h`;
+        return `${Math.floor(hours / 24)}d`;
+    }
+
+    _renderConnections() {
+        if (this._config.show_connections === false) return "";
+        if (!this._connectionsSupported) {
+            return html`
+                <div class="connections">
+                    <div class="conn-head">
+                        <span class="conn-title">${this._t("connections.title")}</span>
+                    </div>
+                    <div class="conn-empty">${this._t("connections.unsupported")}</div>
+                </div>
+            `;
+        }
+        const all = this._connections;
+        return renderConnections({
+            connections: filterConnections(all, this._connFilter),
+            total: all.length,
+            filter: this._connFilter,
+            networks: distinctValues(all, "network"),
+            protocols: distinctValues(all, "protocol"),
+            outbounds: distinctValues(all, "outbound"),
+            onFilter: (patch) => this._setConnFilter(patch),
+            onClose: (id) => this._closeConnection(id),
+            onCloseAll: () => this._closeAllConnections(),
+            closingAll: this._closingAll,
+            t: (key, params) => this._t(key, params),
+            formatBytes: (bytes) => this._formatConnBytes(bytes),
+            formatAge: (ms) => this._formatConnAge(ms),
+        });
     }
 
     // -- render throttle -----------------------------------------------------
@@ -759,22 +1154,58 @@ class SingBoxPanelCard extends LitElement {
                         : ""}
                 </div>
 
-                <div class="speeds">
-                    ${this._speedTile("up", "mdi:arrow-up-bold", this._t("speedUp"), m.uplink)}
-                    ${this._speedTile("down", "mdi:arrow-down-bold", this._t("speedDown"), m.downlink)}
-                </div>
-
-                <div class="totals">
-                    ${this._totalChip("mdi:arrow-up", this._formatBytes(m.uplinkTotal))}
-                    ${this._totalChip("mdi:arrow-down", this._formatBytes(m.downlinkTotal))}
-                    ${this._totalChip("mdi:memory", this._formatBytes(m.memory))}
-                    ${this._totalChip("mdi:lan-connect", this._stateValue(m.connectionsIn))}
-                </div>
-
-                ${m.groups.map((g) => this._renderGroup(g))}
-                ${m.standalone.length
-                    ? this._renderStandalone(m.standalone)
+                ${this._config.show_speeds !== false
+                    ? html`<div class="speeds">
+                          ${this._speedTile(
+                              "up",
+                              "mdi:arrow-up-bold",
+                              this._t("speedUp"),
+                              m.uplink
+                          )}
+                          ${this._speedTile(
+                              "down",
+                              "mdi:arrow-down-bold",
+                              this._t("speedDown"),
+                              m.downlink
+                          )}
+                      </div>`
                     : ""}
+
+                ${this._config.show_chart !== false
+                    ? this._renderChart()
+                    : ""}
+
+                ${this._config.show_totals !== false
+                    ? html`<div class="totals">
+                          ${this._totalChip(
+                              "mdi:arrow-up",
+                              this._formatBytes(m.uplinkTotal)
+                          )}
+                          ${this._totalChip(
+                              "mdi:arrow-down",
+                              this._formatBytes(m.downlinkTotal)
+                          )}
+                          ${this._totalChip(
+                              "mdi:memory",
+                              this._formatBytes(m.memory)
+                          )}
+                          ${this._totalChip(
+                              "mdi:lan-connect",
+                              this._stateValue(m.connectionsIn)
+                          )}
+                      </div>`
+                    : ""}
+
+                ${this._config.show_groups !== false
+                    ? html`
+                          ${m.groups.map((g) => this._renderGroup(g))}
+                          ${m.standalone.length
+                              ? this._renderStandalone(m.standalone)
+                              : ""}
+                      `
+                    : ""}
+
+                ${this._renderConnections()}
 
                 ${this._fallbackNote
                     ? html`<div class="fallback-note">${this._t(

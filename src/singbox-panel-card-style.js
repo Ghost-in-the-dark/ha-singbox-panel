@@ -309,4 +309,248 @@ export const cardStyles = css`
         color: #f9a825;
         background: color-mix(in srgb, #f9a825 12%, transparent);
     }
+
+    /* ---------- traffic chart ---------- */
+    .chart {
+        margin-top: 4px;
+        margin-bottom: 14px;
+    }
+    .chart-head {
+        display: flex;
+        align-items: baseline;
+        gap: 10px;
+        margin-bottom: 6px;
+        font-size: 12px;
+        color: var(--secondary-text-color);
+    }
+    .chart-peak {
+        font-variant-numeric: tabular-nums;
+    }
+    .chart-scale {
+        margin-left: auto;
+        font-variant-numeric: tabular-nums;
+        font-size: 11px;
+        opacity: 0.75;
+    }
+    .chart-legend {
+        margin-left: auto;
+        display: inline-flex;
+        gap: 12px;
+        font-size: 11px;
+        color: var(--secondary-text-color);
+    }
+    .chart-legend .legend-item {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+    }
+    .chart-legend .legend-item i {
+        width: 8px;
+        height: 8px;
+        border-radius: 2px;
+        display: inline-block;
+    }
+    .chart-legend .legend-item.up i { background: #ff7043; }
+    .chart-legend .legend-item.down i { background: var(--success-color, #2e7d32); }
+    .chart-svg {
+        display: block;
+        width: 100%;
+        height: 96px;
+        overflow: visible;
+    }
+    .chart-grid {
+        stroke: var(--divider-color, rgba(0, 0, 0, 0.12));
+        stroke-width: 1;
+    }
+    .chart-line {
+        fill: none;
+        stroke-width: 1.6;
+        stroke-linejoin: round;
+        stroke-linecap: round;
+    }
+    .chart-line.up { stroke: #ff7043; }
+    .chart-line.down { stroke: var(--success-color, #2e7d32); }
+    .chart-fill { stroke: none; }
+    /* The two series overlap, so keep the areas translucent and let the
+       stroked lines carry the shape. */
+    .chart-fill.up { fill: color-mix(in srgb, #ff7043 14%, transparent); }
+    .chart-fill.down {
+        fill: color-mix(in srgb, var(--success-color, #2e7d32) 14%, transparent);
+    }
+    .chart-empty {
+        margin-top: -58px;
+        text-align: center;
+        font-size: 12px;
+        color: var(--disabled-text-color);
+        pointer-events: none;
+    }
+
+    /* ---------- connections ---------- */
+    .connections {
+        margin-top: 14px;
+        border-top: 1px solid var(--divider-color, rgba(0, 0, 0, 0.12));
+        padding-top: 12px;
+    }
+    .conn-head {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        margin-bottom: 10px;
+    }
+    .conn-title {
+        font-size: 14px;
+        font-weight: 600;
+        color: var(--primary-text-color);
+    }
+    .conn-count {
+        font-size: 12px;
+        color: var(--secondary-text-color);
+        font-variant-numeric: tabular-nums;
+    }
+    .conn-close-all {
+        margin-left: auto;
+        flex: none;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        border: none;
+        border-radius: 8px;
+        padding: 5px 8px;
+        cursor: pointer;
+        color: var(--secondary-text-color);
+        background: var(--secondary-background-color, rgba(0, 0, 0, 0.05));
+        transition: background 0.15s ease, color 0.15s ease;
+    }
+    .conn-close-all:hover {
+        background: var(--error-color, #c62828);
+        color: var(--text-primary-color, #fff);
+    }
+    .conn-close-all[disabled] {
+        opacity: 0.5;
+        cursor: default;
+        pointer-events: none;
+    }
+    .conn-close-all ha-icon { --mdc-icon-size: 16px; }
+    .conn-filters {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+        margin-bottom: 10px;
+    }
+    .conn-search {
+        flex: 1 1 160px;
+        min-width: 0;
+        border: 1px solid var(--divider-color, rgba(0, 0, 0, 0.12));
+        border-radius: 8px;
+        padding: 6px 9px;
+        font-size: 12px;
+        font-family: inherit;
+        color: var(--primary-text-color);
+        background: var(--card-background-color, transparent);
+    }
+    .conn-search:focus {
+        outline: none;
+        border-color: var(--primary-color);
+    }
+    .conn-select {
+        flex: 0 1 110px;
+        min-width: 0;
+        border: 1px solid var(--divider-color, rgba(0, 0, 0, 0.12));
+        border-radius: 8px;
+        padding: 6px 6px;
+        font-size: 12px;
+        font-family: inherit;
+        color: var(--primary-text-color);
+        background: var(--card-background-color, transparent);
+    }
+    .conn-reset {
+        border: none;
+        border-radius: 8px;
+        padding: 6px 10px;
+        font-size: 12px;
+        font-family: inherit;
+        cursor: pointer;
+        color: var(--primary-color);
+        background: var(--secondary-background-color, rgba(0, 0, 0, 0.05));
+    }
+    .conn-list {
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+        max-height: 260px;
+        overflow-y: auto;
+    }
+    .conn-row {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 5px 2px;
+        border-bottom: 1px solid var(--divider-color, rgba(0, 0, 0, 0.06));
+    }
+    .conn-row:last-child { border-bottom: none; }
+    .conn-main {
+        display: flex;
+        flex-direction: column;
+        min-width: 0;
+        flex: 1 1 auto;
+    }
+    .conn-host {
+        font-size: 12px;
+        color: var(--primary-text-color);
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+    .conn-sub {
+        font-size: 11px;
+        color: var(--secondary-text-color);
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+    .conn-stats {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        flex: none;
+        font-size: 11px;
+        font-variant-numeric: tabular-nums;
+        color: var(--secondary-text-color);
+    }
+    .conn-stat {
+        display: inline-flex;
+        align-items: center;
+        gap: 2px;
+    }
+    .conn-stat.up ha-icon { color: #ff7043; --mdc-icon-size: 12px; }
+    .conn-stat.down ha-icon { color: var(--success-color, #2e7d32); --mdc-icon-size: 12px; }
+    .conn-age {
+        color: var(--disabled-text-color);
+        min-width: 34px;
+        text-align: right;
+    }
+    .conn-close {
+        flex: none;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        border: none;
+        border-radius: 6px;
+        padding: 3px;
+        cursor: pointer;
+        color: var(--secondary-text-color);
+        background: transparent;
+        transition: background 0.15s ease, color 0.15s ease;
+    }
+    .conn-close:hover {
+        color: var(--error-color, #c62828);
+        background: color-mix(in srgb, var(--error-color, #c62828) 12%, transparent);
+    }
+    .conn-close ha-icon { --mdc-icon-size: 14px; }
+    .conn-empty {
+        padding: 14px 8px;
+        text-align: center;
+        font-size: 12px;
+        color: var(--secondary-text-color);
+    }
 `;

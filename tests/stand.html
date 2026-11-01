@@ -132,6 +132,24 @@
                         device_id: window.__registryDeviceId,
                     }));
                 }
+                if (msg.type === "singbox/connections") {
+                    const mode = window.__connectionsMode || "ok";
+                    if (mode === "unknown") {
+                        // emulates an older integration without the command
+                        throw new Error(`unknown command singbox/connections`);
+                    }
+                    if (mode === "unsupported") {
+                        return { connections: [], count: 0, supported: false };
+                    }
+                    if (mode === "error") {
+                        throw new Error("boom");
+                    }
+                    return {
+                        connections: window.__connections,
+                        count: window.__connections.length,
+                        supported: true,
+                    };
+                }
                 throw new Error(`unknown WS call: ${msg.type}`);
             },
             async callService(domain, service, data) {
@@ -160,6 +178,44 @@
         // null to emulate a HA where sing-box entities are not linked to the
         // device at all (the user's hard case)
         window.__registryDeviceId = "dev1";
+        // Active-connection fixtures for the singbox/connections command.
+        window.__connections = [
+            {
+                id: "c1",
+                network: "tcp",
+                protocol: "https",
+                source: "192.168.1.5:51234",
+                destination: "1.2.3.4:443",
+                host: "example.com",
+                rule: "geosite-example",
+                outbound: "main-out",
+                chain: ["main", "main-out"],
+                process: "/usr/bin/curl",
+                upload: 100,
+                download: 200,
+                upload_total: 2048,
+                download_total: 4096,
+                created_at: Date.now() - 120000,
+            },
+            {
+                id: "c2",
+                network: "udp",
+                protocol: "quic",
+                source: "192.168.1.6:53000",
+                destination: "8.8.8.8:53",
+                host: "dns.google",
+                rule: "",
+                outbound: "Ru-1-out",
+                chain: ["Ru-1-out"],
+                process: "/usr/bin/dig",
+                upload: 0,
+                download: 0,
+                upload_total: 512,
+                download_total: 1024,
+                created_at: Date.now() - 30000,
+            },
+        ];
+        window.__connectionsMode = "ok";
         // optional replacement registry (a "foreign" device with non-singbox
         // entities) used by the card4 scenario
         window.__foreignRegistry = null;

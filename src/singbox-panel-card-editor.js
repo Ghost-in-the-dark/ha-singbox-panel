@@ -20,6 +20,17 @@ const PING_MARK = "_ping_";
 const CLASH_MODE_SUFFIX = "_clash_mode";
 const SYNTHETIC_GLOBAL = "GLOBAL";
 
+// Card sections that can be shown/hidden from the editor. The order here is
+// the order of the switches, which mirrors the card layout top to bottom.
+const SECTIONS = [
+    "show_test_all",
+    "show_speeds",
+    "show_chart",
+    "show_totals",
+    "show_groups",
+    "show_connections",
+];
+
 class SingBoxPanelCardEditor extends LitElement {
     static properties = {
         hass: {},
@@ -269,14 +280,23 @@ class SingBoxPanelCardEditor extends LitElement {
                 <div class="hint">${this._t("editor.intervalHint")}</div>
             </div>
 
-            <div class="row block">
-                <span class="label">${this._t("editor.showTestAll")}</span>
-                <ha-switch
-                    .checked=${cfg.show_test_all !== false}
-                    @change=${(ev) => this._onSwitch(ev, "show_test_all")}
-                ></ha-switch>
+            <div class="block">
+                <div class="block-title">${this._t("editor.sections")}</div>
+                <div class="hint">${this._t("editor.sectionsHint")}</div>
+                ${SECTIONS.map(
+                    (key) => html`
+                        <div class="row">
+                            <span class="label"
+                                >${this._t(`editor.${key}`)}</span
+                            >
+                            <ha-switch
+                                .checked=${cfg[key] !== false}
+                                @change=${(ev) => this._onSwitch(ev, key)}
+                            ></ha-switch>
+                        </div>
+                    `
+                )}
             </div>
-            <div class="hint">${this._t("editor.showTestAllHint")}</div>
 
             ${hasCandidates
                 ? html`

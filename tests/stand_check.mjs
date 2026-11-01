@@ -608,6 +608,172 @@ try {
         JSON.stringify(excludeConfig)
     );
 
+    // -- traffic chart -------------------------------------------------------
+    const chartLines = await page.locator("#card .chart-line").count();
+    check("chart: both series drawn", chartLines === 2, `${chartLines} lines`);
+
+    const chartPoints = await page.evaluate(async () => {
+        const card = document.querySelector("#card > singbox-panel-card");
+        const setSpeed = (id, value) => {
+            window.__fakeHass.states[id].state = String(value);
+        };
+        for (const v of [1000, 2000, 3000]) {
+            setSpeed("sensor.singbox_uplink", v);
+            setSpeed("sensor.singbox_downlink", v * 2);
+            card.hass = { ...window.__fakeHass, states: window.__fakeHass.states };
+            await new Promise((r) => setTimeout(r, 30));
+        }
+        await new Promise((r) => setTimeout(r, 80));
+        const line = card.shadowRoot.querySelector(".chart-line.up");
+        return line ? (line.getAttribute("points") || "").trim() : "";
+    });
+    check(
+        "chart: polyline has points",
+        chartPoints.split(/\s+/).filter(Boolean).length >= 2,
+        chartPoints.slice(0, 40)
+    );
+
+    // -- connections ---------------------------------------------------------
+    await page.waitForTimeout(400);
+    const connRows = await page.locator("#card .conn-row").count();
+    check("connections: rows rendered", connRows === 2, `${connRows} rows`);
+
+    const connHosts = (
+        await page.locator("#card .conn-host").allTextContents()
+    ).map((t) => t.trim());
+    check(
+        "connections: hosts shown",
+        connHosts.includes("example.com") && connHosts.includes("dns.google"),
+        connHosts.join(" | ")
+    );
+
+    const connCount = (
+        await page.textContent("#card .conn-count")
+    ).trim();
+    check("connections: counter", /2/.test(connCount), connCount);
+
+    await page.evaluate(() => {
+        const card = document.querySelector("#card > singbox-panel-card");
+        const input = card.shadowRoot.querySelector(".conn-search");
+        input.value = "curl";
+        input.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    await page.waitForTimeout(120);
+    const filteredHosts = (
+        await page.locator("#card .conn-host").allTextContents()
+    ).map((t) => t.trim());
+    check(
+        "connections: text filter",
+        filteredHosts.length === 1 && filteredHosts[0] === "example.com",
+        filteredHosts.join(" | ")
+    );
+
+    await page.evaluate(() => {
+        const card = document.querySelector("#card > singbox-panel-card");
+        const input = card.shadowRoot.querySelector(".conn-search");
+        input.value = "";
+        input.dispatchEvent(new Event("input", { bubbles: true }));
+        const select = card.shadowRoot.querySelectorAll(".conn-select")[0];
+        select.value = "udp";
+        select.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    await page.waitForTimeout(120);
+    const netHosts = (
+        await page.locator("#card .conn-host").allTextContents()
+    ).map((t) => t.trim());
+    check(
+        "connections: network filter",
+        netHosts.length === 1 && netHosts[0] === "dns.google",
+        netHosts.join(" | ")
+    );
+
+    await page.evaluate(() => {
+        const card = document.querySelector("#card > singbox-panel-card");
+        card.shadowRoot.querySelector(".conn-reset").click();
+    });
+    await page.waitForTimeout(120);
+    check(
+        "connections: reset restores all",
+        (await page.locator("#card .conn-row").count()) === 2
+    );
+
+    await page.evaluate(() => {
+        const card = document.querySelector("#card > singbox-panel-card");
+        card.shadowRoot.querySelector(".conn-close-all").click();
+    });
+    await page.waitForTimeout(150);
+    const closeAllCall = await page.evaluate(() =>
+        window.__calls.find((c) => c.service === "close_all_connections")
+    );
+    check("connections: close-all service", Boolean(closeAllCall));
+
+    // -- section switches ----------------------------------------------------
+    await page.evaluate(() => {
+        const el = document.createElement("singbox-panel-card");
+        el.setConfig({
+            title: "Sections",
+            show_chart: false,
+            show_connections: false,
+            show_speeds: false,
+            show_totals: false,
+            show_groups: false,
+        });
+        const host = document.createElement("div");
+        host.id = "sec";
+        host.appendChild(el);
+        document.body.appendChild(host);
+        el.hass = window.__fakeHass;
+    });
+    await page.waitForTimeout(300);
+    const sectionState = await page.evaluate(() => {
+        const card = document.querySelector("#sec > singbox-panel-card");
+        const root = card.shadowRoot;
+        return {
+            chart: root.querySelectorAll(".chart").length,
+            conn: root.querySelectorAll(".connections").length,
+            speeds: root.querySelectorAll(".speeds").length,
+            totals: root.querySelectorAll(".totals").length,
+            groups: root.querySelectorAll(".group").length,
+            header: root.querySelectorAll("h2").length,
+        };
+    });
+    check(
+        "sections: disabled blocks are hidden",
+        sectionState.chart === 0 &&
+            sectionState.conn === 0 &&
+            sectionState.speeds === 0 &&
+            sectionState.totals === 0 &&
+            sectionState.groups === 0,
+        JSON.stringify(sectionState)
+    );
+    check("sections: header survives", sectionState.header === 1);
+
+    // -- unsupported backend -------------------------------------------------
+    await page.evaluate(() => {
+        window.__connectionsMode = "unsupported";
+        const el = document.createElement("singbox-panel-card");
+        el.setConfig({ title: "Unsupported" });
+        const host = document.createElement("div");
+        host.id = "unsup";
+        host.appendChild(el);
+        document.body.appendChild(host);
+        el.hass = window.__fakeHass;
+    });
+    await page.waitForTimeout(400);
+    const unsupText = await page.evaluate(() => {
+        const card = document.querySelector("#unsup > singbox-panel-card");
+        const note = card.shadowRoot.querySelector(".conn-empty");
+        return note ? note.textContent.trim() : "";
+    });
+    check(
+        "connections: unsupported backend note",
+        unsupText.length > 0 && !/boom/i.test(unsupText),
+        unsupText
+    );
+    await page.evaluate(() => {
+        window.__connectionsMode = "ok";
+    });
+
     await page.screenshot({ path: "tests/stand.png", fullPage: true });
     console.log("  screenshot: tests/stand.png");
 } finally {

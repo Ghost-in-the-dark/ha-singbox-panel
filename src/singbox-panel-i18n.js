@@ -78,8 +78,100 @@ const MESSAGES = {
         },
     },
 
+    // -- traffic chart -------------------------------------------------------
+    chart: {
+        down: { ru: "Скачивание", en: "Download" },
+        up: { ru: "Загрузка", en: "Upload" },
+        peak: {
+            ru: "Пик: {value}",
+            en: "Peak: {value}",
+        },
+        now: {
+            ru: "Сейчас: ↓ {down} · ↑ {up}",
+            en: "Now: ↓ {down} · ↑ {up}",
+        },
+        empty: {
+            ru: "Собираем данные для графика…",
+            en: "Collecting chart data…",
+        },
+    },
+
+    // -- connections ---------------------------------------------------------
+    connections: {
+        title: { ru: "Подключения", en: "Connections" },
+        count: {
+            ru: "всего: {total}",
+            en: "total: {total}",
+        },
+        countFiltered: {
+            ru: "{shown} из {total}",
+            en: "{shown} of {total}",
+        },
+        search: {
+            ru: "Поиск: хост, процесс, правило…",
+            en: "Search: host, process, rule…",
+        },
+        network: { ru: "Сеть", en: "Network" },
+        protocol: { ru: "Протокол", en: "Protocol" },
+        outbound: { ru: "Outbound", en: "Outbound" },
+        allNetworks: { ru: "Все сети", en: "All networks" },
+        allProtocols: { ru: "Все протоколы", en: "All protocols" },
+        allOutbounds: { ru: "Все outbound", en: "All outbounds" },
+        reset: { ru: "Сбросить", en: "Reset" },
+        close: { ru: "Закрыть подключение", en: "Close connection" },
+        closeAll: { ru: "Закрыть все", en: "Close all" },
+        empty: {
+            ru: "Активных подключений нет",
+            en: "No active connections",
+        },
+        noMatch: {
+            ru: "Ничего не найдено по фильтру",
+            en: "Nothing matches the filter",
+        },
+        unsupported: {
+            ru: "Этот бэкенд sing-box не отдаёт список подключений.",
+            en: "This sing-box backend does not expose the connection list.",
+        },
+        unavailable: {
+            ru: "Список подключений недоступен: {msg}",
+            en: "Connection list unavailable: {msg}",
+        },
+    },
+
     // -- visual editor --------------------------------------------------------
     editor: {
+        sections: {
+            ru: "Что показывать на карточке",
+            en: "Sections shown on the card",
+        },
+        sectionsHint: {
+            ru: "Отключите блоки, которые не нужны. Настройки остаются в конфиге и включаются обратно одним переключателем.",
+            en: "Turn off the blocks you do not need. The settings stay in the config and come back with one switch.",
+        },
+        show_test_all: {
+            ru: "Кнопка «Проверить все»",
+            en: "“Test all” button",
+        },
+        show_speeds: {
+            ru: "Текущая скорость (плитки)",
+            en: "Current speed (tiles)",
+        },
+        show_chart: {
+            ru: "График трафика",
+            en: "Traffic chart",
+        },
+        show_totals: {
+            ru: "Сводка: всего, память, соединения",
+            en: "Totals: traffic, memory, connections",
+        },
+        show_groups: {
+            ru: "Группы и outbound",
+            en: "Groups and outbounds",
+        },
+        show_connections: {
+            ru: "Список подключений",
+            en: "Connections list",
+        },
         title: { ru: "Заголовок", en: "Title" },
         language: { ru: "Язык интерфейса", en: "Interface language" },
         languageAuto: {
