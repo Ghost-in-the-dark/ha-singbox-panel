@@ -10,6 +10,11 @@ traffic totals, per-proxy pings and one-click proxy switching.
 
 - **Live speeds** — upload / download tiles with the unit configured in the
   integration options (B/s, KiB/s, MB/s, …).
+- **Traffic per outbound** — the speed of every outbound tag at a glance: a
+  rate line under each node (↓ download · ↑ upload) and a **«Трафик по
+  outbound»** block listing the five busiest outbounds with proportional bars.
+  The header shows the real link speed; the rows show who is eating it. Needs
+  the clash backend (see [Requirements](#requirements)).
 - **Session totals & memory** — download/upload totals, memory usage, active
   connections.
 - **Proxy groups** — one block per selector group (`telaga-out`, `Ru-out`, …),
@@ -68,6 +73,9 @@ update_interval: 0         # optional: refresh rate of the values on the card,
                            # the test buttons always apply instantly.
 show_test_all: true        # optional: show the «Проверить все» batch-test
                            # button in the header (default true)
+show_traffic: true         # optional: per-outbound traffic — the top-5 block
+                           # and the rate line under every node (default true;
+                           # set false to hide both). Needs the clash backend
 exclude_outbounds:         # optional: outbound tags hidden from groups and
   - telaga-urltest-out     # the Outbound block; a group whose every outbound
   - main-out               # is excluded is hidden entirely
@@ -79,16 +87,36 @@ exclude_outbounds:         # optional: outbound tags hidden from groups and
                                     # instance when several are configured
 ```
 
-No other configuration is needed — groups, pings, speeds and totals are
-discovered from the ha-singbox integration automatically. When you edit the
+Every block can be turned on or off from the visual editor. The matching YAML
+keys all default to `true`, and only an explicit `false` hides a block:
+
+| Key | Block |
+|---|---|
+| `show_speeds` | Upload and download speed tiles |
+| `show_chart` | Traffic chart of the last five minutes |
+| `show_totals` | Traffic totals, memory and connection count |
+| `show_traffic` | Traffic per outbound: the top-5 block and a rate line under every node |
+| `show_groups` | Outbound groups and standalone outbounds |
+| `show_connections` | Active connections list with filtering |
+| `show_test_all` | The "Test all" button in the header |
+
+No other configuration is needed — groups, pings, speeds, totals and traffic
+are discovered from the ha-singbox integration automatically. When you edit the
 config (YAML or the visual editor), exclusion changes apply immediately —
 no dashboard reload required.
 
 ### Requirements
 
 - The [ha-singbox](https://github.com/Ghost-in-the-dark/ha-singbox) integration
-  (≥ 0.3.7, for the ping sensors) configured and running.
+  **≥ 0.5.0** configured and running. Older versions work, but the
+  per-outbound traffic block and the rate lines stay hidden — they need the
+  `traffic` key of the `singbox/status` command, added in 0.5.0.
 - Home Assistant with a recent version (entity registry WS API).
+
+The traffic block also needs **per-connection byte counters**, which only the
+clash API backend reports. The gRPC backend (`api` service) cannot, and there
+the card hides the block instead of drawing zeros — everything else on the card
+keeps working.
 
 ## Development
 

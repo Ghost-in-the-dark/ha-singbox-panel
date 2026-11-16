@@ -774,6 +774,536 @@ try {
         window.__connectionsMode = "ok";
     });
 
+
+    // -- ping chips: a failed url-test is a chip, not a dialog ---------------
+    await page.evaluate(() => {
+        const st = window.__fakeHass.states;
+        st["sensor.telaga_1_out_ping"] = {
+            state: "unknown",
+            attributes: { last_test_failed: true },
+        };
+        document.querySelector("#card singbox-panel-card").hass = window.__fakeHass;
+    });
+    await page.waitForTimeout(250);
+    const failChip = page.locator("#card .node", { hasText: "telaga-1-out" }).locator(".ping");
+    const failChipText = (await failChip.textContent()).trim();
+    const failChipClass = await failChip.getAttribute("class");
+    const failChipTitle = await failChip.getAttribute("title");
+    check("failed url-test: x chip", failChipText === "\u2715", failChipText);
+    check("failed url-test: fail class", (failChipClass || "").includes("fail"), failChipClass);
+    check(
+        "failed url-test: localized title",
+        /Тест не прошёл/.test(failChipTitle || ""),
+        failChipTitle
+    );
+
+    // A sensor that was never tested (unknown, no flag) keeps the grey dash.
+    await page.evaluate(() => {
+        window.__fakeHass.states["sensor.telaga_2_out_ping"] = {
+            state: "unknown",
+            attributes: {},
+        };
+        document.querySelector("#card singbox-panel-card").hass = window.__fakeHass;
+    });
+    await page.waitForTimeout(250);
+    const untestedChip = page
+        .locator("#card .node", { hasText: "telaga-2-out" })
+        .locator(".ping");
+    check(
+        "never tested: dash chip",
+        (await untestedChip.textContent()).trim() === "\u2014",
+        await untestedChip.textContent()
+    );
+    check(
+        "never tested: none class",
+        ((await untestedChip.getAttribute("class")) || "").includes("none"),
+        await untestedChip.getAttribute("class")
+    );
+
+    // -- live pings over websocket (no ping sensors at all) ------------------
+    const liveChips = await page.evaluate(async () => {
+        // history recording off: the integration creates no ping sensors
+        window.__foreignRegistry = [
+            {
+                entity_id: "sensor.singbox_version",
+                platform: "singbox",
+                unique_id: "abc123_version",
+            },
+            {
+                entity_id: "select.telaga_out",
+                platform: "singbox",
+                unique_id: "abc123_group_telaga-out",
+            },
+        ];
+        window.__statusProxies = [
+            {
+                tag: "telaga-1-out",
+                type: "shadowsocks",
+                delay: 77,
+                test_time: Date.now(),
+                failed: false,
+            },
+            {
+                tag: "telaga-2-out",
+                type: "shadowsocks",
+                delay: 0,
+                test_time: Date.now(),
+                failed: true,
+            },
+            // a standalone outbound (a VPN interface): with no ping sensor it
+            // must still show up in the Outbound block, from the command alone
+            {
+                tag: "wg-interface",
+                type: "wireguard",
+                delay: 42,
+                test_time: Date.now(),
+                failed: false,
+            },
+        ];
+        const card = document.createElement("singbox-panel-card");
+        card.setConfig({ title: "Live" });
+        const host = document.createElement("div");
+        host.id = "live";
+        host.appendChild(card);
+        document.body.appendChild(host);
+        card.hass = window.__fakeHass;
+        // one status poll tick (the card polls at 2 s when unthrottled)
+        await new Promise((r) => setTimeout(r, 2600));
+        return [...card.shadowRoot.querySelectorAll(".node")].map((n) => {
+            const ping = n.querySelector(".ping");
+            return {
+                name: n.querySelector(".node-name").textContent.trim(),
+                text: ping ? ping.textContent.trim() : null,
+                cls: ping ? ping.getAttribute("class") : null,
+            };
+        });
+    });
+    const liveOk = liveChips.find((n) => n.name === "telaga-1-out");
+    const liveFail = liveChips.find((n) => n.name === "telaga-2-out");
+    check(
+        "websocket ping: delay chip without sensors",
+        liveOk && liveOk.text === "77 ms",
+        JSON.stringify(liveOk)
+    );
+    check(
+        "websocket ping: good class",
+        liveOk && (liveOk.cls || "").includes("good"),
+        JSON.stringify(liveOk)
+    );
+    check(
+        "websocket ping: failed chip",
+        liveFail && liveFail.text === "\u2715",
+        JSON.stringify(liveFail)
+    );
+    check(
+        "websocket ping: fail class",
+        liveFail && (liveFail.cls || "").includes("fail"),
+        JSON.stringify(liveFail)
+    );
+    const liveStandalone = liveChips.find((n) => n.name === "wg-interface");
+    check(
+        "websocket: standalone outbound without sensors",
+        liveStandalone && liveStandalone.text === "42 ms",
+        JSON.stringify(liveStandalone)
+    );
+    check(
+        "websocket: group members are not duplicated as standalone",
+        liveChips.filter((n) => n.name === "telaga-1-out").length === 1,
+        JSON.stringify(liveChips.map((n) => n.name))
+    );
+
+    // An older integration has no singbox/status: the card must log the fact
+    // once, stop polling, and keep drawing the sensor chips.
+    const oldIntegration = await page.evaluate(async () => {
+        window.__statusMode = "unknown";
+        window.__foreignRegistry = null;
+        const card = document.createElement("singbox-panel-card");
+        card.setConfig({ title: "Old" });
+        const host = document.createElement("div");
+        host.id = "old";
+        host.appendChild(card);
+        document.body.appendChild(host);
+        let warns = 0;
+        const originalWarn = console.warn;
+        console.warn = (...args) => {
+            if (String(args[0]).includes("singbox/status")) warns += 1;
+        };
+        card.hass = window.__fakeHass;
+        // Every card already on the page attempts the command once as well, so
+        // let them all settle, then prove the warnings stop for good.
+        await new Promise((r) => setTimeout(r, 3000));
+        const settled = warns;
+        await new Promise((r) => setTimeout(r, 2500));
+        console.warn = originalWarn;
+        return {
+            warned: settled >= 1,
+            warnedAgain: warns !== settled,
+            supported: card._statusSupported,
+            timer: Boolean(card._statusTimer),
+            chips: [...card.shadowRoot.querySelectorAll(".ping")].map((p) =>
+                p.textContent.trim()
+            ),
+        };
+    });
+    check(
+        "old integration: warns once, then silent",
+        oldIntegration.warned === true && oldIntegration.warnedAgain === false,
+        JSON.stringify(oldIntegration)
+    );
+    check(
+        "old integration: stops polling",
+        oldIntegration.supported === false && oldIntegration.timer === false,
+        JSON.stringify(oldIntegration)
+    );
+    check(
+        "old integration: sensor chips intact",
+        oldIntegration.chips.includes("180 ms"),
+        JSON.stringify(oldIntegration.chips)
+    );
+    await page.evaluate(() => {
+        window.__statusMode = "ok";
+        window.__foreignRegistry = null;
+        window.__statusProxies = [];
+    });
+
+
+    // -- per-outbound traffic (singbox/status "traffic" block) ---------------
+    // Real numbers from the production router, in bytes per second. Two tags
+    // carry spaces and a colon on purpose: the card must put them in the DOM
+    // as text, never as markup.
+    const TRAFFIC_FIXTURE = {
+        available: true,
+        now: "2026-11-16T22:00:00+03:00",
+        outbounds: {
+            "telaga-out": { up: 4100, down: 447000 },
+            "telaga-urltest-out": { up: 4100, down: 447000 },
+            "eu vless: EU2": { up: 980, down: 116085 },
+            "main-out": { up: 120, down: 2200 },
+            "EU2-out": { up: 0, down: 0 },
+            "youtube-out": { up: 55, down: 10400 },
+        },
+        total: { up: 5255, down: 565685 },
+    };
+    const pageErrors = [];
+    page.on("pageerror", (err) => pageErrors.push(err.message));
+
+    // (а)(б)(в) block, ordering, total, per-node rates
+    const traffic = await page.evaluate(async (fixture) => {
+        window.__statusTraffic = fixture;
+        window.__statusProxies = [
+            { tag: "telaga-out", type: "Selector", delay: 120, test_time: 1, failed: false },
+            { tag: "main-out", type: "VLESS", delay: 90, test_time: 1, failed: false },
+            { tag: "EU2-out", type: "VLESS", delay: 0, test_time: 0, failed: false },
+        ];
+        const card = document.createElement("singbox-panel-card");
+        card.setConfig({ title: "Traffic" });
+        const host = document.createElement("div");
+        host.id = "traffic";
+        host.appendChild(card);
+        document.body.appendChild(host);
+        card.hass = window.__fakeHass;
+        // one status poll tick delivers the fixture
+        await new Promise((r) => setTimeout(r, 2600));
+        const root = card.shadowRoot;
+        const rows = [...root.querySelectorAll("[data-traffic-row]")].map((row) => ({
+            tag: row.querySelector(".traffic-tag").textContent,
+            down: row.querySelector('[data-dir="down"]').textContent.trim(),
+            up: row.querySelector('[data-dir="up"]').textContent.trim(),
+            bar: row.querySelector(".traffic-bar i").style.width,
+        }));
+        const nodeRates = [...root.querySelectorAll("[data-rate-for]")].map((el) => ({
+            tag: el.dataset.rateFor,
+            text: el.textContent.replace(/\s+/g, " ").trim(),
+        }));
+        return {
+            present: root.querySelectorAll(".traffic").length,
+            title: root.querySelector(".traffic-title")?.textContent.trim(),
+            total: root.querySelector(".traffic-total b")?.textContent.trim(),
+            rows,
+            nodeRates,
+            nodes: root.querySelectorAll(".node").length,
+        };
+    }, TRAFFIC_FIXTURE);
+
+    check(
+        "traffic: block is drawn",
+        traffic.present === 1 && traffic.title === "Трафик по outbound",
+        JSON.stringify({ present: traffic.present, title: traffic.title })
+    );
+    check(
+        "traffic: exactly top-5 rows",
+        traffic.rows.length === 5,
+        `${traffic.rows.length} rows: ${traffic.rows.map((r) => r.tag).join(", ")}`
+    );
+    check(
+        "traffic: rows sorted by up+down",
+        traffic.rows.map((r) => r.tag).join(" | ") ===
+            "telaga-out | telaga-urltest-out | eu vless: EU2 | youtube-out | main-out",
+        traffic.rows.map((r) => r.tag).join(" | ")
+    );
+    check(
+        "traffic: tag with spaces and colon kept as text",
+        traffic.rows.some((r) => r.tag === "eu vless: EU2"),
+        JSON.stringify(traffic.rows.map((r) => r.tag))
+    );
+    check(
+        "traffic: header shows the connection total, not the overlapping sum",
+        traffic.total === "557.6 KiB/s",
+        traffic.total
+    );
+    check(
+        "traffic: biggest row is a full bar, next one is not",
+        traffic.rows[0].bar === "100%" &&
+            parseInt(traffic.rows[1].bar, 10) === 100 &&
+            parseInt(traffic.rows[2].bar, 10) > 0 &&
+            parseInt(traffic.rows[2].bar, 10) < 100,
+        JSON.stringify(traffic.rows.map((r) => r.bar))
+    );
+    check(
+        "traffic: row shows both directions",
+        traffic.rows[0].down.includes("KiB/s") && /B\/s/.test(traffic.rows[0].up),
+        JSON.stringify(traffic.rows[0])
+    );
+    check(
+        "traffic: every node carries a rate line with both arrows",
+        traffic.nodeRates.length === traffic.nodes &&
+            traffic.nodeRates.every((r) => /↓/.test(r.text) && /↑/.test(r.text)),
+        JSON.stringify(traffic.nodeRates.slice(0, 3))
+    );
+
+    // (в cont.) live update: numbers move in place, the DOM nodes do not
+    const trafficLive = await page.evaluate(async () => {
+        const card = document.querySelector("#traffic > singbox-panel-card");
+        const root = card.shadowRoot;
+        const nodeBefore = root.querySelector(".node");
+        const rateElBefore = root.querySelector('[data-rate-for="telaga-out"]');
+        card.setConfig({ title: "Traffic", update_interval: 30 });
+        window.__statusTraffic = {
+            available: true,
+            now: "2026-11-16T22:00:01+03:00",
+            outbounds: {
+                "telaga-out": { up: 4100, down: 447000 },
+                "main-out": { up: 999, down: 999 },
+            },
+        };
+        await new Promise((r) => setTimeout(r, 1500));
+        return {
+            sameNode: nodeBefore === root.querySelector(".node"),
+            sameRate: rateElBefore === root.querySelector('[data-rate-for="telaga-out"]'),
+            mainOut: root
+                .querySelector('[data-rate-for="main-out"]')
+                .textContent.replace(/\s+/g, " ").trim(),
+        };
+    });
+    check(
+        "traffic: refresh patches the DOM instead of repainting",
+        trafficLive.sameNode === true && trafficLive.sameRate === true,
+        JSON.stringify(trafficLive)
+    );
+    check(
+        "traffic: numbers actually moved",
+        /999 B\/s/.test(trafficLive.mainOut) && trafficLive.mainOut.includes("↓"),
+        trafficLive.mainOut
+    );
+
+    // (б cont.) an answer with traffic but without the "total" key: the header
+    // must fall back to the sum over every outbound, not stay empty.
+    const noTotalKey = await page.evaluate(async (fixture) => {
+        const { total, ...withoutTotal } = fixture;
+        window.__statusTraffic = withoutTotal;
+        window.__statusProxies = [
+            { tag: "main-out", type: "VLESS", delay: 90, test_time: 1, failed: false },
+        ];
+        const card = document.createElement("singbox-panel-card");
+        card.setConfig({ title: "NoTotal" });
+        const host = document.createElement("div");
+        host.id = "nototal";
+        host.appendChild(card);
+        document.body.appendChild(host);
+        card.hass = window.__fakeHass;
+        await new Promise((r) => setTimeout(r, 2600));
+        const root = card.shadowRoot;
+        return {
+            total: root.querySelector(".traffic-total b")?.textContent.trim(),
+            rows: root.querySelectorAll("[data-traffic-row]").length,
+        };
+    }, TRAFFIC_FIXTURE);
+    check(
+        "traffic: no total key falls back to the per-outbound sum",
+        noTotalKey.total === "1,007.9 KiB/s" && noTotalKey.rows === 5,
+        JSON.stringify(noTotalKey)
+    );
+
+    // (г) old integration: no "traffic" key at all
+    const noTrafficKey = await page.evaluate(async () => {
+        window.__statusTraffic = null;
+        window.__statusProxies = [
+            { tag: "main-out", type: "VLESS", delay: 90, test_time: 1, failed: false },
+        ];
+        const card = document.createElement("singbox-panel-card");
+        card.setConfig({ title: "NoTraffic" });
+        const host = document.createElement("div");
+        host.id = "notraffic";
+        host.appendChild(card);
+        document.body.appendChild(host);
+        card.hass = window.__fakeHass;
+        await new Promise((r) => setTimeout(r, 2600));
+        const root = card.shadowRoot;
+        return {
+            blocks: root.querySelectorAll(".traffic").length,
+            rates: root.querySelectorAll(".node-rate").length,
+            nodes: root.querySelectorAll(".node").length,
+        };
+    });
+    check(
+        "traffic: old integration draws nothing and still shows nodes",
+        noTrafficKey.blocks === 0 &&
+            noTrafficKey.rates === 0 &&
+            noTrafficKey.nodes > 0,
+        JSON.stringify(noTrafficKey)
+    );
+
+    // (д) backend that cannot report counters (gRPC): available = false
+    const unavailable = await page.evaluate(async () => {
+        window.__statusTraffic = {
+            available: false,
+            now: "2026-11-16T22:00:00+03:00",
+            outbounds: { "main-out": { up: 120, down: 2200 } },
+            total: { up: 120, down: 2200 },
+        };
+        const card = document.createElement("singbox-panel-card");
+        card.setConfig({ title: "Unavailable" });
+        const host = document.createElement("div");
+        host.id = "unavail";
+        host.appendChild(card);
+        document.body.appendChild(host);
+        card.hass = window.__fakeHass;
+        await new Promise((r) => setTimeout(r, 2600));
+        const root = card.shadowRoot;
+        return {
+            blocks: root.querySelectorAll(".traffic").length,
+            rates: root.querySelectorAll(".node-rate").length,
+            nodes: root.querySelectorAll(".node").length,
+        };
+    });
+    check(
+        "traffic: available=false draws nothing",
+        unavailable.blocks === 0 &&
+            unavailable.rates === 0 &&
+            unavailable.nodes > 0,
+        JSON.stringify(unavailable)
+    );
+
+    // (е) the editor switch hides it
+    const trafficOff = await page.evaluate(async (fixture) => {
+        window.__statusTraffic = fixture;
+        const card = document.createElement("singbox-panel-card");
+        card.setConfig({ title: "TrafficOff", show_traffic: false });
+        const host = document.createElement("div");
+        host.id = "trafficoff";
+        host.appendChild(card);
+        document.body.appendChild(host);
+        card.hass = window.__fakeHass;
+        await new Promise((r) => setTimeout(r, 2600));
+        const root = card.shadowRoot;
+        return {
+            blocks: root.querySelectorAll(".traffic").length,
+            rates: root.querySelectorAll(".node-rate").length,
+            nodes: root.querySelectorAll(".node").length,
+        };
+    }, TRAFFIC_FIXTURE);
+    check(
+        "traffic: show_traffic=false hides block and node rates",
+        trafficOff.blocks === 0 &&
+            trafficOff.rates === 0 &&
+            trafficOff.nodes > 0,
+        JSON.stringify(trafficOff)
+    );
+    check(
+        "traffic: no page errors while switching traffic on and off",
+        pageErrors.length === 0,
+        JSON.stringify(pageErrors)
+    );
+    check(
+        "traffic: editor exposes the show_traffic switch",
+        await page.evaluate(async () => {
+            const editor = document.createElement("singbox-panel-card-editor");
+            editor.setConfig({});
+            editor.hass = window.__fakeHass;
+            const host = document.createElement("div");
+            host.id = "editorTraffic";
+            host.appendChild(editor);
+            document.body.appendChild(host);
+            await new Promise((r) => setTimeout(r, 200));
+            const labels = [...editor.shadowRoot.querySelectorAll(".row .label")];
+            const idx = labels.findIndex((l) => /Трафик по outbound/.test(l.textContent));
+            const switches = [...editor.shadowRoot.querySelectorAll(".row ha-switch")];
+            return idx >= 0 && switches[idx] && switches[idx].checked === true;
+        }),
+        "switch present and on by default"
+    );
+
+    // The cards above are still mounted and poll the shared fake backend, so
+    // they must go before the poll-lifecycle checks count calls globally.
+    await page.evaluate(() => {
+        for (const id of ["traffic", "nototal", "notraffic", "unavail", "trafficoff", "editorTraffic"]) {
+            document.getElementById(id)?.remove();
+        }
+        window.__statusTraffic = null;
+        window.__statusProxies = [];
+    });
+    await page.waitForTimeout(200);
+
+    // -- the status poll starts and stops with the card ----------------------
+    const statusLifecycle = await page.evaluate(async () => {
+        let calls = 0;
+        const originalCall = window.__fakeHass.callWS.bind(window.__fakeHass);
+        window.__fakeHass.callWS = async (msg) => {
+            if (msg.type === "singbox/status") calls += 1;
+            return originalCall(msg);
+        };
+        const card = document.createElement("singbox-panel-card");
+        card.setConfig({ title: "Life", update_interval: 1 });
+        const host = document.createElement("div");
+        host.id = "life";
+        host.appendChild(card);
+        document.body.appendChild(host);
+        card.hass = window.__fakeHass;
+        await new Promise((r) => setTimeout(r, 3500));
+        const whileAttached = calls;
+        host.removeChild(card);
+        await new Promise((r) => setTimeout(r, 250));
+        const timerAfterRemove = Boolean(card._statusTimer);
+        const baseline = calls;
+        await new Promise((r) => setTimeout(r, 2500));
+        const afterDetach = calls - baseline;
+        host.appendChild(card);
+        await new Promise((r) => setTimeout(r, 1500));
+        const timerOnReattach = Boolean(card._statusTimer);
+        window.__fakeHass.callWS = originalCall;
+        return { whileAttached, timerAfterRemove, afterDetach, timerOnReattach };
+    });
+    check(
+        "status poll: runs while attached",
+        statusLifecycle.whileAttached >= 2,
+        JSON.stringify(statusLifecycle)
+    );
+    check(
+        "status poll: timer cleared on disconnect",
+        statusLifecycle.timerAfterRemove === false,
+        JSON.stringify(statusLifecycle)
+    );
+    check(
+        "status poll: silent after disconnect",
+        statusLifecycle.afterDetach === 0,
+        JSON.stringify(statusLifecycle)
+    );
+    check(
+        "status poll: resumes on reconnect",
+        statusLifecycle.timerOnReattach === true,
+        JSON.stringify(statusLifecycle)
+    );
+
     await page.screenshot({ path: "tests/stand.png", fullPage: true });
     console.log("  screenshot: tests/stand.png");
 } finally {

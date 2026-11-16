@@ -150,6 +150,30 @@
                         supported: true,
                     };
                 }
+                if (msg.type === "singbox/status") {
+                    const mode = window.__statusMode || "ok";
+                    if (mode === "unknown") {
+                        // emulates an older integration without the command
+                        throw new Error(`unknown command singbox/status`);
+                    }
+                    if (mode === "error") {
+                        throw new Error("boom");
+                    }
+                    const answer = {
+                        version: "1.13.18",
+                        premium: true,
+                        history_enabled: window.__historyEnabled !== false,
+                        groups: [],
+                        proxies: window.__statusProxies || [],
+                    };
+                    // Per-outbound traffic. Left out of the answer when null,
+                    // which is what an integration older than the traffic
+                    // contract answers, and what the card must survive.
+                    if (window.__statusTraffic) {
+                        answer.traffic = window.__statusTraffic;
+                    }
+                    return answer;
+                }
                 throw new Error(`unknown WS call: ${msg.type}`);
             },
             async callService(domain, service, data) {
@@ -216,6 +240,14 @@
             },
         ];
         window.__connectionsMode = "ok";
+        // Fixtures for the singbox/status command (live url-test results).
+        // "unknown" emulates an integration that predates the command.
+        window.__statusMode = "ok";
+        window.__statusProxies = [];
+        window.__historyEnabled = true;
+        // null emulates an integration that predates the traffic contract:
+        // the "traffic" key is then absent from the answer entirely.
+        window.__statusTraffic = null;
         // optional replacement registry (a "foreign" device with non-singbox
         // entities) used by the card4 scenario
         window.__foreignRegistry = null;
